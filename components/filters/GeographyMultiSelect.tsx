@@ -1,13 +1,20 @@
 'use client'
 
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useDashboardStore } from '@/lib/store'
-import { Check, ChevronDown } from 'lucide-react'
+import { ChevronDown, ChevronRight, Check, Minus } from 'lucide-react'
+
+interface TreeNode {
+  name: string
+  level: 'global' | 'region' | 'country'
+  children: TreeNode[]
+}
 
 export function GeographyMultiSelect() {
   const { data, filters, updateFilters } = useDashboardStore()
   const [isOpen, setIsOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(['Global']))
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   // Close dropdown when clicking outside
@@ -27,89 +34,259 @@ export function GeographyMultiSelect() {
     }
   }, [isOpen])
 
-  // Get geography options - only top-level regions if hierarchy exists
-  const geographyOptions = useMemo(() => {
+  // Build the tree structure from geography hierarchy
+  const tree = useMemo((): TreeNode[] => {
     if (!data || !data.dimensions?.geographies) return []
 
-    // If geography_hierarchy exists, only show top-level regions
     const hierarchy = data.dimensions.geographies.geography_hierarchy
-    if (hierarchy && Object.keys(hierarchy).length > 0) {
-      // Get root regions (those not children of any other region)
-      // But exclude self-references (e.g., {"North America": ["North America"]})
-      const allChildren = new Set<string>()
-      Object.entries(hierarchy).forEach(([parent, children]) => {
-        children.forEach(child => {
-          // Only count as a child if it's different from the parent
-          if (child !== parent) {
-            allChildren.add(child)
-          }
-        })
-      })
+    const allGeos = data.dimensions.geographies.all_geographies || []
 
-      let rootRegions = Object.keys(hierarchy).filter(key => !allChildren.has(key))
-
-      // If all regions got filtered out (self-referential structure),
-      // fall back to all hierarchy keys or all_geographies
-      if (rootRegions.length === 0) {
-        // Check if all entries are self-referential (key equals its only child)
-        const isSelfReferential = Object.entries(hierarchy).every(([parent, children]) =>
-          children.length === 1 && children[0] === parent
-        )
-
-        if (isSelfReferential) {
-          // This is actually a flat structure disguised as hierarchy
-          // Use all_geographies instead
-          rootRegions = data.dimensions.geographies.all_geographies || []
-        } else {
-          // Use all hierarchy keys
-          rootRegions = Object.keys(hierarchy)
-        }
+    // If we have a proper hierarchy with Global → Regions → Countries
+    if (hierarchy && Object.keys(hierarchy).length > 0 && hierarchy['Global']) {
+      const globalNode: TreeNode = {
+        name: 'Global',
+        level: 'global',
+        children: (hierarchy['Global'] || []).map(regionName => ({
+          name: regionName,
+          level: 'region' as const,
+          children: (hierarchy[regionName] || []).map(countryName => ({
+            name: countryName,
+            level: 'country' as const,
+            children: [],
+          })),
+        })),
       }
-
-      // Filter based on search term
-      if (!searchTerm) {
-        return rootRegions
-      }
-      const search = searchTerm.toLowerCase()
-      return rootRegions.filter(geo => geo.toLowerCase().includes(search))
+      return [globalNode]
     }
 
-    // Otherwise show all geographies
-    const allGeographies = data.dimensions.geographies.all_geographies || []
+    // Fallback: flat list (no hierarchy)
+    return allGeos.map(geo => ({
+      name: geo,
+      level: 'global' as const,
+      children: [],
+    }))
+  }, [data])
 
-    if (!searchTerm) {
-      return allGeographies
+  // Get all descendant names for a node (including itself)
+  const getAllDescendants = useCallback((node: TreeNode): string[] => {
+    const result = [node.name]
+    for (const child of node.children) {
+      result.push(...getAllDescendants(child))
     }
+    return result
+  }, [])
+
+  // Get all leaf names (nodes with no children) under a node
+  const getAllLeaves = useCallback((node: TreeNode): string[] => {
+    if (node.children.length === 0) return [node.name]
+    const result: string[] = []
+    for (const child of node.children) {
+      result.push(...getAllLeaves(child))
+    }
+    return result
+  }, [])
+
+  // Determine checkbox state for a node
+  const getCheckState = useCallback((node: TreeNode): 'checked' | 'unchecked' | 'indeterminate' => {
+    const selected = filters.geographies
+
+    if (node.children.length === 0) {
+      // Leaf node
+      return selected.includes(node.name) ? 'checked' : 'unchecked'
+    }
+
+    // Parent node — check based on children
+    const allDescendants = getAllDescendants(node)
+    // Include self + all descendants
+    const allNames = allDescendants
+    const selectedCount = allNames.filter(n => selected.includes(n)).length
+
+    if (selectedCount === 0) return 'unchecked'
+    if (selectedCount === allNames.length) return 'checked'
+    return 'indeterminate'
+  }, [filters.geographies, getAllDescendants])
+
+  // Toggle a node's selection
+  const handleToggle = useCallback((node: TreeNode) => {
+    const current = new Set(filters.geographies)
+    const allDescendants = getAllDescendants(node)
+    const state = getCheckState(node)
+
+    if (state === 'checked') {
+      // Uncheck this node and all descendants
+      allDescendants.forEach(name => current.delete(name))
+    } else {
+      // Check this node and all descendants
+      allDescendants.forEach(name => current.add(name))
+    }
+
+    updateFilters({ geographies: Array.from(current) })
+  }, [filters.geographies, getAllDescendants, getCheckState, updateFilters])
+
+  // Toggle expand/collapse
+  const toggleExpand = useCallback((nodeName: string, e?: React.MouseEvent) => {
+    setExpandedNodes(prev => {
+      const next = new Set(prev)
+      if (next.has(nodeName)) {
+        next.delete(nodeName)
+      } else {
+        next.add(nodeName)
+      }
+      return next
+    })
+  }, [])
+
+  // Filter tree based on search term
+  const filteredTree = useMemo((): TreeNode[] => {
+    if (!searchTerm) return tree
 
     const search = searchTerm.toLowerCase()
-    return allGeographies.filter(geo =>
-      geo.toLowerCase().includes(search)
-    )
-  }, [data, searchTerm])
 
-  const handleToggle = (geography: string) => {
-    const current = filters.geographies
-    const updated = current.includes(geography)
-      ? current.filter(g => g !== geography)
-      : [...current, geography]
+    const filterNode = (node: TreeNode): TreeNode | null => {
+      // If this node matches, include it with all children
+      if (node.name.toLowerCase().includes(search)) {
+        return node
+      }
 
-    updateFilters({ geographies: updated })
-  }
+      // Otherwise check if any children match
+      const filteredChildren = node.children
+        .map(child => filterNode(child))
+        .filter((child): child is TreeNode => child !== null)
 
-  const handleSelectAll = () => {
+      if (filteredChildren.length > 0) {
+        return { ...node, children: filteredChildren }
+      }
+
+      return null
+    }
+
+    return tree
+      .map(node => filterNode(node))
+      .filter((node): node is TreeNode => node !== null)
+  }, [tree, searchTerm])
+
+  // Expand all nodes when searching
+  useEffect(() => {
+    if (searchTerm) {
+      const allNodeNames = new Set<string>()
+      const collectNames = (nodes: TreeNode[]) => {
+        for (const node of nodes) {
+          allNodeNames.add(node.name)
+          collectNames(node.children)
+        }
+      }
+      collectNames(filteredTree)
+      setExpandedNodes(allNodeNames)
+    }
+  }, [searchTerm, filteredTree])
+
+  // Select all visible geographies
+  const handleSelectAll = useCallback(() => {
     if (!data) return
-    updateFilters({
-      geographies: geographyOptions // Select all visible options
-    })
-  }
+    const allNames = new Set(filters.geographies)
+    const collectAllNames = (nodes: TreeNode[]) => {
+      for (const node of nodes) {
+        allNames.add(node.name)
+        collectAllNames(node.children)
+      }
+    }
+    collectAllNames(filteredTree)
+    updateFilters({ geographies: Array.from(allNames) })
+  }, [data, filters.geographies, filteredTree, updateFilters])
 
-  const handleClearAll = () => {
+  // Clear all selections
+  const handleClearAll = useCallback(() => {
     updateFilters({ geographies: [] })
-  }
+  }, [updateFilters])
 
   if (!data) return null
 
   const selectedCount = filters.geographies.length
+  const hasHierarchy = tree.length === 1 && tree[0].children.length > 0
+
+  // Render a tree node
+  const renderNode = (node: TreeNode, depth: number = 0) => {
+    const isExpanded = expandedNodes.has(node.name)
+    const hasChildren = node.children.length > 0
+    const checkState = getCheckState(node)
+    const indent = depth * 20
+
+    return (
+      <div key={node.name}>
+        <div
+          className={`flex items-center py-1.5 px-3 hover:bg-blue-50 cursor-pointer ${
+            depth > 0 ? 'border-t border-gray-50' : ''
+          }`}
+          style={{ paddingLeft: `${12 + indent}px` }}
+          onClick={() => handleToggle(node)}
+        >
+          {/* Expand/collapse button */}
+          {hasChildren ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleExpand(node.name, e)
+              }}
+              className="mr-1 p-0.5 rounded hover:bg-gray-200 flex-shrink-0"
+            >
+              {isExpanded ? (
+                <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5 text-gray-500" />
+              )}
+            </button>
+          ) : (
+            <span className="mr-1 w-[18px] flex-shrink-0" />
+          )}
+
+          {/* Checkbox */}
+          <span
+            className={`mr-2 h-4 w-4 flex-shrink-0 rounded border flex items-center justify-center ${
+              checkState === 'checked'
+                ? 'bg-blue-600 border-blue-600'
+                : checkState === 'indeterminate'
+                ? 'bg-blue-600 border-blue-600'
+                : 'border-gray-300 bg-white'
+            }`}
+          >
+            {checkState === 'checked' && (
+              <Check className="h-3 w-3 text-white" strokeWidth={3} />
+            )}
+            {checkState === 'indeterminate' && (
+              <Minus className="h-3 w-3 text-white" strokeWidth={3} />
+            )}
+          </span>
+
+          {/* Label */}
+          <span
+            className={`text-sm flex-1 ${
+              node.level === 'global'
+                ? 'font-semibold text-black'
+                : node.level === 'region'
+                ? 'font-medium text-gray-800'
+                : 'text-gray-700'
+            }`}
+          >
+            {node.name}
+          </span>
+
+          {/* Count badge for parent nodes */}
+          {hasChildren && (
+            <span className="text-xs text-gray-400 ml-1">
+              ({node.children.length})
+            </span>
+          )}
+        </div>
+
+        {/* Children */}
+        {hasChildren && isExpanded && (
+          <div>
+            {node.children.map(child => renderNode(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -157,32 +334,14 @@ export function GeographyMultiSelect() {
             </button>
           </div>
 
-          {/* Geography List */}
+          {/* Geography Tree */}
           <div className="overflow-y-auto max-h-64">
-            {geographyOptions.length === 0 ? (
+            {filteredTree.length === 0 ? (
               <div className="px-3 py-4 text-sm text-black text-center">
                 {searchTerm ? 'No geographies found matching your search' : 'No geographies available'}
               </div>
             ) : (
-              geographyOptions.map((geography, index) => (
-                <label
-                  key={geography}
-                  className={`flex items-center px-3 py-2 hover:bg-blue-50 cursor-pointer ${
-                    index > 0 ? 'border-t border-gray-100' : ''
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={filters.geographies.includes(geography)}
-                    onChange={() => handleToggle(geography)}
-                    className="mr-3 h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                  />
-                  <span className="text-sm text-black flex-1">{geography}</span>
-                  {filters.geographies.includes(geography) && (
-                    <Check className="h-4 w-4 text-blue-600" />
-                  )}
-                </label>
-              ))
+              filteredTree.map(node => renderNode(node, 0))
             )}
           </div>
         </div>
@@ -199,4 +358,3 @@ export function GeographyMultiSelect() {
     </div>
   )
 }
-

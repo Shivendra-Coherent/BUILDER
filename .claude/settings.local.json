@@ -6,7 +6,9 @@
       "Bash(git remote add:*)",
       "Bash(git fetch:*)",
       "Bash(git branch:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd Pricing Analysis feature with improved UI visibility\n\n- Add Pricing Analysis tab to Dashboard Builder \\(4th tab\\)\n- Create process-pricing-analysis API route to parse CSV/Excel files\n- Add PricingAnalysisView component with bar, line, heatmap, and table views\n- Fix getDefaultPricingFilters to correctly read from pricing data structure\n- Add pricing-analysis to chart groups configuration\n- Update ChartGroupSelector to show Pricing Analysis when data exists\n- Fix text visibility in filters and heatmap \\(change to black text\\)\n- Convert Segments from multi-select to dropdown format\n- Improve heatmap contrast for better readability\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)"
     ]
   }
 }

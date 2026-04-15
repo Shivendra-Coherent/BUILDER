@@ -43,7 +43,8 @@ export default function DashboardPage() {
     proposition2Data,
     proposition3Data,
     intelligenceType,
-    pricingAnalysisData
+    pricingAnalysisData,
+    showDemoNote
   } = useDashboardStore()
   const [mounted, setMounted] = useState(false)
   const [hasCheckedStore, setHasCheckedStore] = useState(false)
@@ -374,6 +375,16 @@ export default function DashboardPage() {
         {/* Global KPI Cards - Only show when market data exists */}
         <div className="mb-6">
           <GlobalKPICards />
+          {showDemoNote && (
+            <div className="mt-3 mx-1 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-4 py-2.5">
+              <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+              </svg>
+              <p className="text-xs text-amber-800">
+                <span className="font-semibold">NOTE:</span> All the data in the dashboard is demo data. No real world data is related to this.
+              </p>
+            </div>
+          )}
         </div>
         <div className="grid grid-cols-12 gap-6">
           {/* Sidebar - Enhanced Filter Panel */}

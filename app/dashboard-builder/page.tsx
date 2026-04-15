@@ -26,7 +26,8 @@ export default function DashboardBuilderPage() {
     setCompetitiveIntelligenceData,
     setPricingAnalysisData,
     setDashboardName,
-    setCurrency
+    setCurrency,
+    setShowDemoNote
   } = useDashboardStore()
   
   // Section 1: Market Intelligence
@@ -38,6 +39,7 @@ export default function DashboardBuilderPage() {
   const [marketStatus, setMarketStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle')
   const [marketStatusMessage, setMarketStatusMessage] = useState('')
   const [processedData, setProcessedData] = useState<ComparisonData | null>(null)
+  const [showDemoNoteToggle, setShowDemoNoteToggle] = useState(false)
   
   // Section 2: Intelligence Data (Optional)
   const [intelligenceType, setLocalIntelligenceType] = useState<IntelligenceType>('customer')
@@ -839,8 +841,34 @@ export default function DashboardBuilderPage() {
           {activeTab === 'market' && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
             <div className="mb-6">
-              <h2 className="text-2xl font-bold text-black mb-2">1. Market Intelligence</h2>
-              <p className="text-sm text-gray-600">Upload your value and volume sheets to build the market analysis dashboard</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-black mb-2">1. Market Intelligence</h2>
+                  <p className="text-sm text-gray-600">Upload your value and volume sheets to build the market analysis dashboard</p>
+                </div>
+                {/* Demo Note Toggle */}
+                <div className="flex items-center gap-3 ml-6 flex-shrink-0">
+                  <span className="text-sm text-gray-600 font-medium">Show Demo Note</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !showDemoNoteToggle
+                      setShowDemoNoteToggle(next)
+                      setShowDemoNote(next)
+                    }}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                      showDemoNoteToggle ? 'bg-blue-600' : 'bg-gray-300'
+                    }`}
+                    aria-pressed={showDemoNoteToggle}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                        showDemoNoteToggle ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-6">

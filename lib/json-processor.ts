@@ -1162,6 +1162,21 @@ export async function processJsonDataAsync(
       }
     }
 
+    // Also detect "By Country" segment type (used in multi-geography CSVs)
+    const countrySegmentPatterns = [/^by\s*country$/i, /^country$/i]
+    let countrySegmentType: string | null = null
+
+    for (const segType of segmentTypes) {
+      if (countrySegmentPatterns.some(pattern => pattern.test(segType))) {
+        countrySegmentType = segType
+        break
+      }
+    }
+
+    if (countrySegmentType) {
+      console.log(`Found country segment type: ${countrySegmentType}`)
+    }
+
     // If we found a geography segment type, extract the hierarchy from it
     if (geographySegmentType) {
       console.log(`Found geography segment type: ${geographySegmentType}, extracting geography hierarchy...`)
@@ -1302,7 +1317,98 @@ export async function processJsonDataAsync(
       }
     }
 
+    // ============================================================
+    // MULTI-GEOGRAPHY HIERARCHY: Enrich hierarchy from "By Country" data
+    // When the Region column contains multiple geographies AND "By Country"
+    // segment exists, use it to build region→country relationships.
+    // ============================================================
+    const isMultiGeography = geographies.length > 1
+    const hasGlobalGeo = geographies.some(g => g.toLowerCase() === 'global')
+
+    if (isMultiGeography && countrySegmentType) {
+      console.log(`Multi-geography data with "${countrySegmentType}" segment detected, building hierarchy from By Country...`)
+      const hierarchy = geographyDimension.geography_hierarchy || {}
+
+      // For each geography that has "By Country" data, extract the country children
+      for (const geo of geographies) {
+        const countryData = structureData[geo]?.[countrySegmentType]
+        if (countryData && typeof countryData === 'object') {
+          const countries = Object.keys(countryData).filter(key =>
+            !/^\d{4}$/.test(key) && key !== 'CAGR' && key !== '_aggregated' && key !== '_level' && key !== geo
+          )
+          if (countries.length > 0) {
+            if (!hierarchy[geo]) hierarchy[geo] = []
+            for (const country of countries) {
+              if (!hierarchy[geo].includes(country)) {
+                hierarchy[geo].push(country)
+              }
+            }
+            console.log(`  ${geo} → [${countries.join(', ')}]`)
+          }
+        }
+      }
+
+      // If "By Region" data in Global gives us Global→regions, combine
+      // Otherwise build Global→regions from geographies that have "By Country" (they are regions)
+      if (hasGlobalGeo && !hierarchy['Global']) {
+        const regions = Object.keys(hierarchy)
+        if (regions.length > 0) {
+          hierarchy['Global'] = regions
+        }
+      }
+
+      geographyDimension.geography_hierarchy = hierarchy
+      // Update all_geographies to include everything
+      const allGeoSet = new Set(geographies)
+      for (const children of Object.values(hierarchy)) {
+        children.forEach(c => allGeoSet.add(c))
+      }
+      geographyDimension.all_geographies = Array.from(allGeoSet)
+      geographyDimension.regions = Object.keys(hierarchy).filter(key =>
+        key !== 'Global' && !Object.values(hierarchy).some(children => children.includes(key))
+      )
+      console.log('Multi-geo hierarchy:', JSON.stringify(hierarchy, null, 2))
+    } else if (isMultiGeography && !countrySegmentType && !geographyDimension.geography_hierarchy?.['Global']) {
+      // No "By Country" or "By Region" segments — auto-detect hierarchy from countryToRegionMap
+      console.log('No geography segments found, auto-detecting hierarchy from region column...')
+      const hierarchy: Record<string, string[]> = {}
+      const regions = new Set<string>()
+      const countries = new Set<string>()
+
+      for (const geo of geographies) {
+        if (geo.toLowerCase() === 'global') continue
+        const parentRegion = countryToRegionMap[geo]
+        if (parentRegion && geographies.includes(parentRegion)) {
+          // This geography is a country under an existing region
+          if (!hierarchy[parentRegion]) hierarchy[parentRegion] = []
+          if (!hierarchy[parentRegion].includes(geo)) hierarchy[parentRegion].push(geo)
+          countries.add(geo)
+          regions.add(parentRegion)
+        } else if (!parentRegion) {
+          // Not in the map — could be a region itself
+          regions.add(geo)
+        }
+      }
+
+      if (hasGlobalGeo && regions.size > 0) {
+        hierarchy['Global'] = Array.from(regions)
+      }
+
+      if (Object.keys(hierarchy).length > 0) {
+        geographyDimension.geography_hierarchy = hierarchy
+        geographyDimension.all_geographies = geographies
+        geographyDimension.regions = Array.from(regions)
+        console.log('Auto-detected hierarchy:', JSON.stringify(hierarchy, null, 2))
+      }
+    }
+    // ============================================================
+
     console.log(`Geography dimension built with ${geographies.length} geographies:`, geographies)
+
+    // Determine which segment types are geography-related (to optionally exclude from dropdown)
+    const geoSegmentTypes = new Set<string>()
+    if (geographySegmentType) geoSegmentTypes.add(geographySegmentType)
+    if (countrySegmentType) geoSegmentTypes.add(countrySegmentType)
 
     // Process each segment type asynchronously
     const segments: Record<string, SegmentDimension> = {}
@@ -1311,6 +1417,13 @@ export async function processJsonDataAsync(
     const segmentTypeIndex = 1
 
     for (const segmentType of segmentTypes) {
+      // Skip geography segment types when we have multi-geography data
+      // (they are summary rows, not real segments — actual data is in Region column)
+      if (isMultiGeography && geoSegmentTypes.has(segmentType)) {
+        console.log(`Skipping geography segment type "${segmentType}" (data already in Region column)`)
+        continue
+      }
+
       console.log(`Processing segment type: ${segmentType}`)
 
       // Check if this segment type is the geography segment type - if so, pass the geography hierarchy
@@ -1361,7 +1474,191 @@ export async function processJsonDataAsync(
       console.log('Processing volume data...')
       // Similar async processing for volume data can be added here
     }
-    
+
+    // ============================================================
+    // FIX geography_level and parent_geography on records
+    // When we have a hierarchy, update records to reflect their position
+    // ============================================================
+    if (isMultiGeography && geographyDimension.geography_hierarchy) {
+      const hierarchy = geographyDimension.geography_hierarchy
+      // Build a child→parent lookup
+      const childToParent: Record<string, string> = {}
+      for (const [parent, children] of Object.entries(hierarchy)) {
+        for (const child of children) {
+          childToParent[child] = parent
+        }
+      }
+      const parentSet = new Set(Object.keys(hierarchy))
+
+      const fixGeoLevel = (records: DataRecord[]) => {
+        for (const record of records) {
+          if (record.geography.toLowerCase() === 'global') {
+            record.geography_level = 'global'
+            record.parent_geography = null
+          } else if (parentSet.has(record.geography) && childToParent[record.geography]) {
+            // It's both a parent (has children) and a child (under Global) — it's a region
+            record.geography_level = 'region'
+            record.parent_geography = childToParent[record.geography] || 'Global'
+          } else if (childToParent[record.geography]) {
+            record.geography_level = 'country'
+            record.parent_geography = childToParent[record.geography]
+          } else if (parentSet.has(record.geography)) {
+            record.geography_level = 'region'
+            record.parent_geography = 'Global'
+          }
+        }
+      }
+      fixGeoLevel(valueRecords)
+      if (volumeRecords.length > 0) fixGeoLevel(volumeRecords)
+      console.log('Fixed geography_level on records for multi-geography data')
+    }
+
+    // ============================================================
+    // POST-PROCESSING: Transform "By Region" records into geography records
+    // This extracts regions/countries from "By Region" segment type and
+    // creates new records with geography set to the country/region name,
+    // enabling geography-based filtering in the dashboard.
+    // ONLY for single-geography data (Format A: all rows Region="Global")
+    // ============================================================
+    if (geographySegmentType && !isMultiGeography) {
+      console.log(`Post-processing "${geographySegmentType}" records into geography records...`)
+
+      // Helper to create geography records from "By Region" records
+      const transformByRegionRecords = (records: DataRecord[]): DataRecord[] => {
+        const byRegionRecords = records.filter(r => r.segment_type === geographySegmentType)
+        if (byRegionRecords.length === 0) return []
+
+        const newRecords: DataRecord[] = []
+        const regionChildren: Record<string, DataRecord[]> = {} // region name → country records
+
+        // Step 1: Create country-level geography records
+        for (const record of byRegionRecords) {
+          const region = record.segment_hierarchy.level_1
+          const country = record.segment_hierarchy.level_2 || record.segment
+
+          // Skip if we can't determine region/country
+          if (!region || !country) continue
+
+          // Create a copy with geography = country
+          newRecords.push({
+            ...record,
+            geography: country,
+            geography_level: 'country',
+            parent_geography: region,
+          })
+
+          // Track for region aggregation
+          if (!regionChildren[region]) regionChildren[region] = []
+          regionChildren[region].push(record)
+        }
+
+        // Step 2: Create region-aggregated records (sum of countries)
+        for (const [region, countryRecords] of Object.entries(regionChildren)) {
+          if (countryRecords.length === 0) continue
+
+          // Aggregate time series across all countries in this region
+          const aggregatedTimeSeries: Record<number, number> = {}
+          for (const cr of countryRecords) {
+            for (const [yearStr, value] of Object.entries(cr.time_series)) {
+              const year = Number(yearStr)
+              aggregatedTimeSeries[year] = (aggregatedTimeSeries[year] || 0) + (value as number)
+            }
+          }
+
+          // Calculate CAGR for aggregated record
+          const years = Object.keys(aggregatedTimeSeries).map(Number).sort()
+          let regionCagr = 0
+          if (years.length >= 2) {
+            const firstYear = years[0]
+            const lastYear = years[years.length - 1]
+            const firstValue = aggregatedTimeSeries[firstYear]
+            const lastValue = aggregatedTimeSeries[lastYear]
+            const numYears = lastYear - firstYear
+            if (firstValue > 0 && numYears > 0) {
+              regionCagr = (Math.pow(lastValue / firstValue, 1 / numYears) - 1) * 100
+            }
+          }
+
+          newRecords.push({
+            geography: region,
+            geography_level: 'region',
+            parent_geography: 'Global',
+            segment_type: geographySegmentType,
+            segment: region,
+            segment_level: 'parent',
+            segment_hierarchy: {
+              level_1: region,
+              level_2: '',
+              level_3: '',
+              level_4: '',
+            },
+            time_series: aggregatedTimeSeries,
+            cagr: Math.round(regionCagr * 100) / 100,
+            market_share: 0,
+            is_aggregated: true,
+            aggregation_level: 1,
+          })
+        }
+
+        return newRecords
+      }
+
+      // Transform value records
+      const newValueGeoRecords = transformByRegionRecords(valueRecords)
+      valueRecords.push(...newValueGeoRecords)
+      console.log(`Added ${newValueGeoRecords.length} geography value records (countries + region aggregates)`)
+
+      // Transform volume records
+      if (volumeRecords.length > 0) {
+        const newVolumeGeoRecords = transformByRegionRecords(volumeRecords)
+        volumeRecords.push(...newVolumeGeoRecords)
+        console.log(`Added ${newVolumeGeoRecords.length} geography volume records`)
+      }
+
+      // Step 3: Build the geography hierarchy from the "By Region" data
+      const regionHierarchy: Record<string, string[]> = {}
+      const byRegionValueRecords = valueRecords.filter(
+        r => r.segment_type === geographySegmentType && r.geography === 'Global'
+      )
+      for (const record of byRegionValueRecords) {
+        const region = record.segment_hierarchy.level_1
+        const country = record.segment_hierarchy.level_2 || record.segment
+        if (region && country && region !== country) {
+          if (!regionHierarchy[region]) regionHierarchy[region] = []
+          if (!regionHierarchy[region].includes(country)) {
+            regionHierarchy[region].push(country)
+          }
+        }
+      }
+
+      // Build full hierarchy with Global at the top
+      const allRegions = Object.keys(regionHierarchy)
+      if (allRegions.length > 0) {
+        const fullHierarchy: Record<string, string[]> = {
+          'Global': allRegions,
+          ...regionHierarchy,
+        }
+        geographyDimension.geography_hierarchy = fullHierarchy
+
+        // Update all_geographies to include Global + all regions + all countries
+        const allGeoNames = new Set<string>(geographyDimension.all_geographies)
+        for (const [region, countries] of Object.entries(regionHierarchy)) {
+          allGeoNames.add(region)
+          countries.forEach(c => allGeoNames.add(c))
+        }
+        geographyDimension.all_geographies = Array.from(allGeoNames)
+        geographyDimension.regions = allRegions
+        geographyDimension.countries = regionHierarchy
+
+        console.log(`Geography hierarchy built: ${allRegions.length} regions, ${Object.values(regionHierarchy).flat().length} countries`)
+        console.log('Regions:', allRegions)
+        console.log('all_geographies:', geographyDimension.all_geographies)
+      }
+    }
+    // ============================================================
+    // END POST-PROCESSING
+    // ============================================================
+
     // Calculate market share for each record
     const calculateMarketShare = (records: DataRecord[], year: number) => {
       const yearTotal = records.reduce((sum, r) => sum + (r.time_series[year] || 0), 0)

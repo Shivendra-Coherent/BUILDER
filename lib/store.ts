@@ -29,6 +29,7 @@ interface DashboardStore {
   pricingFiltersLoaded: boolean // Track if pricing filters are loaded
   dashboardName: string | null // Custom dashboard name
   currency: 'USD' | 'INR' // Currency preference
+  showDemoNote: boolean // Toggle for demo data disclaimer note
   
   // Actions
   setData: (data: ComparisonData) => void
@@ -60,6 +61,7 @@ interface DashboardStore {
   loadDefaultPricingFilters: () => void
   setDashboardName: (name: string | null) => void
   setCurrency: (currency: 'USD' | 'INR') => void
+  setShowDemoNote: (show: boolean) => void
 }
 
 // Helper function to check if data has B2B/B2C segmentation
@@ -244,6 +246,7 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   pricingFiltersLoaded: false,
   dashboardName: null,
   currency: 'USD',
+  showDemoNote: false,
   
   setData: (data) => {
     const defaultFilters = getDefaultFilters(data)
@@ -496,6 +499,8 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   setDashboardName: (name) => set({ dashboardName: name }),
   
   setCurrency: (currency) => set({ currency }),
+
+  setShowDemoNote: (show) => set({ showDemoNote: show }),
   
   setLoading: (loading) => set({ isLoading: loading }),
   

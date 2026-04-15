@@ -98,12 +98,8 @@ export async function generateDashboardFiles(
   }
 
   // 4. Lib directory - Copy all lib files
-  const libFiles = await getLibFiles()
-  console.log(`Processing ${libFiles.length} lib files...`)
-  console.log('Lib files found:', libFiles)
-
-  // Critical lib files that MUST be included
-  const criticalLibFiles = [
+  // Complete list of all known lib files - used as fallback if directory walk fails
+  const allKnownLibFiles = [
     'lib/store.ts',
     'lib/types.ts',
     'lib/utils.ts',
@@ -111,16 +107,43 @@ export async function generateDashboardFiles(
     'lib/json-processor.ts',
     'lib/chart-config.ts',
     'lib/chart-groups.ts',
-    'lib/chart-theme.ts'
+    'lib/chart-theme.ts',
+    'lib/competitive-intelligence-data.ts',
+    'lib/customer-intelligence-data.ts',
+    'lib/distributors-intelligence-data.ts',
+    'lib/export-utils.ts',
+    'lib/insights-generator.ts',
+    'lib/intelligence-data-converter.ts',
+    'lib/mock-data.ts',
+    'lib/preset-utils.ts',
+    'lib/workers/json-processor.worker.ts'
   ]
 
-  // Ensure critical files are in the list
-  for (const criticalFile of criticalLibFiles) {
-    if (!libFiles.includes(criticalFile)) {
-      console.log(`Adding missing critical file: ${criticalFile}`)
-      libFiles.push(criticalFile)
+  let libFiles: string[] = []
+  try {
+    libFiles = await getLibFiles()
+    console.log(`getLibFiles() found ${libFiles.length} lib files:`, libFiles)
+  } catch (error) {
+    console.error('getLibFiles() threw an error:', error)
+    libFiles = []
+  }
+
+  // If directory walk found no files, use the comprehensive known files list
+  if (libFiles.length === 0) {
+    console.warn('WARNING: getLibFiles() returned 0 files. Using comprehensive fallback list of all known lib files.')
+    console.warn('process.cwd() =', process.cwd())
+    libFiles = [...allKnownLibFiles]
+  } else {
+    // Ensure all known lib files are in the list even if directory walk missed some
+    for (const knownFile of allKnownLibFiles) {
+      if (!libFiles.includes(knownFile)) {
+        console.log(`Adding missing known lib file: ${knownFile}`)
+        libFiles.push(knownFile)
+      }
     }
   }
+
+  console.log(`Processing ${libFiles.length} lib files...`)
 
   let libSuccessCount = 0
   const failedLibFiles: string[] = []
@@ -138,6 +161,12 @@ export async function generateDashboardFiles(
   console.log(`Successfully added ${libSuccessCount}/${libFiles.length} lib files`)
   if (failedLibFiles.length > 0) {
     console.error('Failed lib files:', failedLibFiles)
+  }
+
+  // If NO lib files were successfully added, this is a critical error - log prominently
+  if (libSuccessCount === 0) {
+    console.error('CRITICAL: No lib files were added to the package! The generated dashboard will not work.')
+    console.error('process.cwd() =', process.cwd())
   }
 
   // 5. Public directory with data and logo
@@ -1215,44 +1244,115 @@ function normalizePathForZip(filePath: string): string {
 }
 
 /**
+ * Get the project root directory.
+ * Tries process.cwd() first, then falls back to resolving from __dirname.
+ * Caches the result for performance.
+ */
+let _cachedProjectRoot: string | null = null
+async function getProjectRoot(): Promise<string> {
+  if (_cachedProjectRoot) return _cachedProjectRoot
+
+  const cwd = process.cwd()
+
+  // Check if process.cwd() has our expected directories
+  try {
+    await fs.access(path.join(cwd, 'lib'))
+    await fs.access(path.join(cwd, 'components'))
+    _cachedProjectRoot = cwd
+    console.log(`Project root (from cwd): ${_cachedProjectRoot}`)
+    return _cachedProjectRoot
+  } catch {
+    console.warn(`process.cwd() (${cwd}) does not contain lib/ and components/ directories`)
+  }
+
+  // Fallback: try to resolve from __dirname (this file is in lib/)
+  try {
+    const dirnameBased = path.resolve(__dirname, '..')
+    await fs.access(path.join(dirnameBased, 'lib'))
+    await fs.access(path.join(dirnameBased, 'components'))
+    _cachedProjectRoot = dirnameBased
+    console.log(`Project root (from __dirname): ${_cachedProjectRoot}`)
+    return _cachedProjectRoot
+  } catch {
+    console.warn(`__dirname-based path (${path.resolve(__dirname, '..')}) also failed`)
+  }
+
+  // Fallback: walk up from cwd looking for package.json + lib/
+  let current = cwd
+  for (let i = 0; i < 5; i++) {
+    try {
+      await fs.access(path.join(current, 'lib'))
+      await fs.access(path.join(current, 'package.json'))
+      _cachedProjectRoot = current
+      console.log(`Project root (from walk-up): ${_cachedProjectRoot}`)
+      return _cachedProjectRoot
+    } catch {
+      const parent = path.dirname(current)
+      if (parent === current) break // reached filesystem root
+      current = parent
+    }
+  }
+
+  // Last resort: use cwd and hope for the best
+  console.warn(`Could not reliably determine project root, falling back to cwd: ${cwd}`)
+  _cachedProjectRoot = cwd
+  return _cachedProjectRoot
+}
+
+/**
  * Read template file from current project
  */
 async function readTemplateFile(filePath: string): Promise<string | null> {
+  const projectRoot = await getProjectRoot()
+
+  // Normalize path for the file system (handle both Windows and Unix)
+  const normalizedPath = filePath.replace(/\//g, path.sep)
+  const fullPath = path.join(projectRoot, normalizedPath)
+
   try {
-    const currentDir = process.cwd()
-    // Normalize path for the file system (handle both Windows and Unix)
-    const normalizedPath = filePath.replace(/\//g, path.sep)
-    const fullPath = path.join(currentDir, normalizedPath)
-    console.log(`Reading template file: ${fullPath}`)
     const content = await fs.readFile(fullPath, 'utf-8')
     console.log(`Successfully read ${filePath} (${content.length} bytes)`)
     return content
   } catch (error: any) {
-    console.error(`ERROR reading template file ${filePath}:`, error?.message || error)
-    // Try alternative paths
-    const altPaths = [
-      path.join(process.cwd(), filePath),
-      path.join(process.cwd(), filePath.replace(/\\/g, '/')),
-      path.resolve(filePath)
-    ]
-    for (const altPath of altPaths) {
-      try {
-        const content = await fs.readFile(altPath, 'utf-8')
-        console.log(`Successfully read from alternate path: ${altPath}`)
-        return content
-      } catch {
-        // Continue to next path
-      }
-    }
-    return null
+    console.error(`ERROR reading template file ${filePath} at ${fullPath}:`, error?.message || error)
   }
+
+  // Try alternative paths if the primary path failed
+  const altPaths = [
+    path.join(process.cwd(), filePath),
+    path.join(process.cwd(), normalizedPath),
+    path.resolve(filePath),
+    // Try relative to __dirname (this file is in lib/)
+    path.resolve(__dirname, '..', normalizedPath),
+  ]
+
+  // Deduplicate and skip paths we already tried
+  const triedPaths = new Set<string>([fullPath])
+  for (const altPath of altPaths) {
+    const resolvedAlt = path.resolve(altPath)
+    if (triedPaths.has(resolvedAlt)) continue
+    triedPaths.add(resolvedAlt)
+
+    try {
+      const content = await fs.readFile(resolvedAlt, 'utf-8')
+      console.log(`Successfully read from alternate path: ${resolvedAlt}`)
+      return content
+    } catch {
+      // Continue to next path
+    }
+  }
+
+  console.error(`FAILED to read ${filePath} from any path. Tried: ${[...triedPaths].join(', ')}`)
+  return null
 }
 
 /**
  * Get list of component files to copy
  */
 async function getComponentFiles(): Promise<string[]> {
-  const componentDir = path.join(process.cwd(), 'components')
+  const projectRoot = await getProjectRoot()
+  const componentDir = path.join(projectRoot, 'components')
+  console.log(`getComponentFiles: scanning directory ${componentDir}`)
   const files: string[] = []
 
   // Stack overflow protection: limit directory depth
@@ -1305,7 +1405,9 @@ async function getComponentFiles(): Promise<string[]> {
  * Get list of lib files to copy
  */
 async function getLibFiles(): Promise<string[]> {
-  const libDir = path.join(process.cwd(), 'lib')
+  const projectRoot = await getProjectRoot()
+  const libDir = path.join(projectRoot, 'lib')
+  console.log(`getLibFiles: scanning directory ${libDir}`)
   const files: string[] = []
 
   // Stack overflow protection: limit directory depth
