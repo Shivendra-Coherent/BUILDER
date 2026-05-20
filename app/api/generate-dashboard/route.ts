@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { convertExcelFiles } from '@excel-upload-tool/lib/excel-processor'
 import { loadAndProcessJsonFiles } from '@/lib/json-processor'
 import { generateDashboardFiles, createZipFile } from '@/lib/dashboard-generator'
+import {
+  ingestTimingsExposed,
+  logIngestTimings,
+  toServerTimingHeader,
+} from '@/lib/server-ingest-timings'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { writeFile } from 'fs/promises'
@@ -24,7 +29,10 @@ export const dynamic = 'force-dynamic'
  * - intelligenceType: Type of intelligence data ('customer' | 'distributor')
  */
 export async function POST(request: NextRequest) {
+  const routeStart = performance.now()
+  const metrics: Record<string, number> = {}
   try {
+    let tick = performance.now()
     const formData = await request.formData()
     const valueFile = formData.get('valueFile') as File | null
     const volumeFile = formData.get('volumeFile') as File | null
@@ -35,14 +43,33 @@ export async function POST(request: NextRequest) {
     const proposition2DataStr = formData.get('proposition2Data') as string | null
     const proposition3DataStr = formData.get('proposition3Data') as string | null
     const intelligenceType = formData.get('intelligenceType') as string | null
+    const distributorIntelligenceDataStr = formData.get('distributorIntelligenceData') as string | null
+    const distributorProposition2DataStr = formData.get('distributorProposition2Data') as string | null
+    const distributorProposition3DataStr = formData.get('distributorProposition3Data') as string | null
 
-    // Parse intelligence data
+    // Parse intelligence data (large JSON payloads)
     const intelligenceData = intelligenceDataStr ? JSON.parse(intelligenceDataStr) : null
     const proposition2Data = proposition2DataStr ? JSON.parse(proposition2DataStr) : null
     const proposition3Data = proposition3DataStr ? JSON.parse(proposition3DataStr) : null
+    const distributorIntelligenceData = distributorIntelligenceDataStr
+      ? JSON.parse(distributorIntelligenceDataStr)
+      : null
+    const distributorProposition2Data = distributorProposition2DataStr
+      ? JSON.parse(distributorProposition2DataStr)
+      : null
+    const distributorProposition3Data = distributorProposition3DataStr
+      ? JSON.parse(distributorProposition3DataStr)
+      : null
+    metrics.parseFormDataMs = Math.round(performance.now() - tick)
 
     // Check if we have any data at all
-    const hasIntelligenceData = intelligenceData || proposition2Data || proposition3Data
+    const hasIntelligenceData =
+      intelligenceData ||
+      proposition2Data ||
+      proposition3Data ||
+      distributorIntelligenceData ||
+      distributorProposition2Data ||
+      distributorProposition3Data
 
     if (!valueFile && !hasIntelligenceData) {
       return NextResponse.json(
@@ -80,9 +107,10 @@ export async function POST(request: NextRequest) {
 
       console.log('Starting dashboard generation with market data...')
 
-      // Convert files to buffers
+      tick = performance.now()
       const valueBuffer = Buffer.from(await valueFile.arrayBuffer())
       const volumeBuffer = volumeFile ? Buffer.from(await volumeFile.arrayBuffer()) : undefined
+      metrics.readFileBuffersMs = Math.round(performance.now() - tick)
 
       // Detect file types
       const isValueCsv = valueFileName.endsWith('.csv')
@@ -90,12 +118,14 @@ export async function POST(request: NextRequest) {
 
       // Convert Excel/CSV to JSON
       console.log('Converting Excel/CSV files to JSON...')
+      tick = performance.now()
       const { value: valueJson, volume: volumeJson } = convertExcelFiles(
         valueBuffer,
         volumeBuffer,
         isValueCsv,
         isVolumeCsv
       )
+      metrics.spreadsheetToJsonMs = Math.round(performance.now() - tick)
 
       // Create temporary JSON files for processing
       // Use /tmp in serverless environments (Vercel, AWS Lambda) which is the only writable directory
@@ -139,11 +169,13 @@ export async function POST(request: NextRequest) {
 
       // Process JSON files through existing pipeline
       console.log('Processing JSON files through pipeline...')
+      tick = performance.now()
       comparisonData = await loadAndProcessJsonFiles(
         tempValuePath,
         tempVolumePath,
         tempSegmentationPath
       )
+      metrics.tempWriteMarketPipelineMs = Math.round(performance.now() - tick)
 
       // Clean up temporary files
       try {
@@ -164,28 +196,43 @@ export async function POST(request: NextRequest) {
       intelligenceData,
       proposition2Data,
       proposition3Data,
+      distributorIntelligenceData,
+      distributorProposition2Data,
+      distributorProposition3Data,
       intelligenceType
     }
 
     // Generate dashboard files
     console.log('Generating dashboard files...')
+    tick = performance.now()
     const files = await generateDashboardFiles(comparisonData, projectName, intelligencePackageData)
-    
+    metrics.generateDashboardFilesMs = Math.round(performance.now() - tick)
+
     // Create zip file
     console.log('Creating zip file...')
+    tick = performance.now()
     const zipBuffer = await createZipFile(files)
-    
+    metrics.createZipMs = Math.round(performance.now() - tick)
+
+    metrics.totalMs = Math.round(performance.now() - routeStart)
     console.log('Dashboard generation completed successfully')
-    
-    // Return zip file as response
-    // Convert Buffer to Uint8Array for NextResponse compatibility
-    return new NextResponse(new Uint8Array(zipBuffer), {
-      headers: {
-        'Content-Type': 'application/zip',
-        'Content-Disposition': `attachment; filename="${projectName}.zip"`,
-        'Content-Length': zipBuffer.length.toString(),
-      },
+
+    logIngestTimings('generate-dashboard', {
+      ...metrics,
+      zipBytes: zipBuffer.length,
     })
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="${projectName}.zip"`,
+      'Content-Length': zipBuffer.length.toString(),
+    }
+    if (ingestTimingsExposed()) {
+      const { totalMs: _t, ...stagesSansTotal } = metrics
+      headers['Server-Timing'] = toServerTimingHeader(stagesSansTotal, metrics.totalMs)
+    }
+
+    return new NextResponse(new Uint8Array(zipBuffer), { headers })
   } catch (error) {
     console.error('Error generating dashboard:', error)
     

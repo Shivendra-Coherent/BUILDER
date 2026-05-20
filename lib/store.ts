@@ -16,13 +16,17 @@ interface DashboardStore {
   geographyFiltersBySegmentType: Record<string, string[]> // Store geography filters per segment type
   fromDashboardBuilder: boolean // Track if data came from dashboard builder
   dashboardBuilderFiles: { valueFile: File | null; volumeFile: File | null; projectName: string } | null
-  intelligenceType: 'customer' | 'distributor' | null // Track which intelligence type is selected
+  intelligenceType: 'customer' | 'distributor' | 'both' | null // Intelligence datasets to include
   customerIntelligenceData: any[] | null // Store customer intelligence data
   distributorIntelligenceData: any[] | null // Store distributor intelligence data
   parentHeaders: { prop1: string; prop2: string; prop3: string } | null // Store parent headers for propositions
   rawIntelligenceData: { headers: string[]; rows: Record<string, any>[]; parentHeaders?: { name: string; startCol: number; colSpan: number }[] | null } | null // Store raw Excel data as-is
   proposition2Data: { headers: string[]; rows: Record<string, any>[]; parentHeaders?: { name: string; startCol: number; colSpan: number }[] | null } | null // Store Proposition 2 data
   proposition3Data: { headers: string[]; rows: Record<string, any>[]; parentHeaders?: { name: string; startCol: number; colSpan: number }[] | null } | null // Store Proposition 3 data
+  /** Distributor workbook upload (separate from customer proposition data when both are used) */
+  distributorRawIntelligenceData: { headers: string[]; rows: Record<string, any>[]; parentHeaders?: { name: string; startCol: number; colSpan: number }[] | null } | null
+  distributorProposition2Data: { headers: string[]; rows: Record<string, any>[]; parentHeaders?: { name: string; startCol: number; colSpan: number }[] | null } | null
+  distributorProposition3Data: { headers: string[]; rows: Record<string, any>[]; parentHeaders?: { name: string; startCol: number; colSpan: number }[] | null } | null
   competitiveIntelligenceData: { headers: string[]; rows: Record<string, any>[] } | null // Store competitive intelligence CSV data
   pricingAnalysisData: any | null // Store pricing analysis data (similar structure to market data)
   pricingFilters: FilterState // Pricing analysis filters
@@ -47,13 +51,16 @@ interface DashboardStore {
   getGeographyFiltersForSegmentType: (segmentType: string) => string[] | undefined
   setDashboardBuilderContext: (files: { valueFile: File | null; volumeFile: File | null; projectName: string }) => void
   clearDashboardBuilderContext: () => void
-  setIntelligenceType: (type: 'customer' | 'distributor' | null) => void
+  setIntelligenceType: (type: 'customer' | 'distributor' | 'both' | null) => void
   setCustomerIntelligenceData: (data: any[]) => void
   setDistributorIntelligenceData: (data: any[]) => void
   setParentHeaders: (headers: { prop1: string; prop2: string; prop3: string } | null) => void
   setRawIntelligenceData: (data: { headers: string[]; rows: Record<string, any>[]; parentHeaders?: { name: string; startCol: number; colSpan: number }[] | null } | null) => void
   setProposition2Data: (data: { headers: string[]; rows: Record<string, any>[]; parentHeaders?: { name: string; startCol: number; colSpan: number }[] | null } | null) => void
   setProposition3Data: (data: { headers: string[]; rows: Record<string, any>[]; parentHeaders?: { name: string; startCol: number; colSpan: number }[] | null } | null) => void
+  setDistributorRawIntelligenceData: (data: { headers: string[]; rows: Record<string, any>[]; parentHeaders?: { name: string; startCol: number; colSpan: number }[] | null } | null) => void
+  setDistributorProposition2Data: (data: { headers: string[]; rows: Record<string, any>[]; parentHeaders?: { name: string; startCol: number; colSpan: number }[] | null } | null) => void
+  setDistributorProposition3Data: (data: { headers: string[]; rows: Record<string, any>[]; parentHeaders?: { name: string; startCol: number; colSpan: number }[] | null } | null) => void
   setCompetitiveIntelligenceData: (data: { headers: string[]; rows: Record<string, any>[] } | null) => void
   setPricingAnalysisData: (data: any | null) => void
   updatePricingFilters: (filters: Partial<FilterState>) => void
@@ -240,6 +247,9 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   rawIntelligenceData: null,
   proposition2Data: null,
   proposition3Data: null,
+  distributorRawIntelligenceData: null,
+  distributorProposition2Data: null,
+  distributorProposition3Data: null,
   competitiveIntelligenceData: null,
   pricingAnalysisData: null,
   pricingFilters: getDefaultPricingFilters(null),
@@ -443,6 +453,10 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   setProposition2Data: (data) => set({ proposition2Data: data }),
   
   setProposition3Data: (data) => set({ proposition3Data: data }),
+
+  setDistributorRawIntelligenceData: (data) => set({ distributorRawIntelligenceData: data }),
+  setDistributorProposition2Data: (data) => set({ distributorProposition2Data: data }),
+  setDistributorProposition3Data: (data) => set({ distributorProposition3Data: data }),
   
   setCompetitiveIntelligenceData: (data) => set({ competitiveIntelligenceData: data }),
 

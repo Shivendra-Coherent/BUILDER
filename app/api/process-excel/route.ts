@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { convertExcelFiles } from '@excel-upload-tool/lib/excel-processor'
 import { loadAndProcessJsonFiles } from '@/lib/json-processor'
+import {
+  createStageTimer,
+  ingestTimingsExposed,
+  logIngestTimings,
+} from '@/lib/server-ingest-timings'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { writeFile } from 'fs/promises'
@@ -204,12 +209,23 @@ function addAggregationsToData(data: any): any {
  * Accepts multipart/form-data with:
  * - valueFile: Excel or CSV file for value data (required)
  * - volumeFile: Excel or CSV file for volume data (optional)
+ * - volumeUnit: "million-units" | "units" | "th-units" | "tons" — display label for volume (optional)
  */
 export async function POST(request: NextRequest) {
   try {
+    const timer = createStageTimer()
     const formData = await request.formData()
     const valueFile = formData.get('valueFile') as File | null
     const volumeFile = formData.get('volumeFile') as File | null
+    const volumeUnitRaw = (formData.get('volumeUnit') as string | null)?.trim().toLowerCase()
+    const volumeUnitLabel =
+      volumeUnitRaw === 'million-units'
+        ? 'Million units'
+        : volumeUnitRaw === 'th-units'
+          ? 'Th units'
+          : volumeUnitRaw === 'tons'
+            ? 'Tons'
+            : 'Units'
     const hierarchyConfigStr = formData.get('hierarchyConfig') as string | null
     
     // Parse hierarchy configuration
@@ -221,6 +237,8 @@ export async function POST(request: NextRequest) {
         console.warn('Failed to parse hierarchy config:', e)
       }
     }
+
+    timer.lap('parseFormDataMs')
     
     if (!valueFile) {
       return NextResponse.json(
@@ -256,6 +274,8 @@ export async function POST(request: NextRequest) {
     // Convert files to buffers
     const valueBuffer = Buffer.from(await valueFile.arrayBuffer())
     const volumeBuffer = volumeFile ? Buffer.from(await volumeFile.arrayBuffer()) : undefined
+
+    timer.lap('readFileBuffersMs')
     
     // Detect file types
     const isValueCsv = valueFileName.endsWith('.csv')
@@ -269,6 +289,8 @@ export async function POST(request: NextRequest) {
       isValueCsv,
       isVolumeCsv
     )
+
+    timer.lap('spreadsheetToJsonMs')
     
     // Apply hierarchy configuration: Remove aggregation regions from data
     // Aggregation regions are parent regions that should be calculated as sums, not treated as data points
@@ -396,6 +418,8 @@ export async function POST(request: NextRequest) {
     
     const segmentationStructure = removeYearData(segmentationJson)
     await writeFile(tempSegmentationPath, JSON.stringify(segmentationStructure, null, 2), 'utf-8')
+
+    timer.lap('aggregationAndArtifactWriteMs')
     
     // Process JSON files through existing pipeline
     console.log('Processing JSON files through pipeline...')
@@ -408,8 +432,11 @@ export async function POST(request: NextRequest) {
     const comparisonData = await loadAndProcessJsonFiles(
       tempValuePath,
       tempVolumePath,
-      tempSegmentationPath
+      tempSegmentationPath,
+      { volumeUnit: volumeUnitLabel }
     )
+
+    timer.lap('jsonPipelineMs')
     
     console.log('Processed data structure:', {
       hasData: !!comparisonData,
@@ -433,9 +460,143 @@ export async function POST(request: NextRequest) {
     } catch (cleanupError) {
       console.warn('Failed to clean up temporary files:', cleanupError)
     }
-    
+
+    // ── Cross Value / Cross Volume processing ────────────────────────────────
+    // These are optional extra files with an additional "Sub-segment 1" column
+    // that adds a cross-tabulated segment type on top of the main dataset.
+    const crossValueFile = formData.get('crossValueFile') as File | null
+    const crossVolumeFile = formData.get('crossVolumeFile') as File | null
+
+    if (crossValueFile) {
+      try {
+        console.log('Processing cross value/volume files...')
+        const isCrossValueCsv = crossValueFile.name.toLowerCase().endsWith('.csv')
+        const crossValueBuffer = Buffer.from(await crossValueFile.arrayBuffer())
+        const crossVolumeBuffer = crossVolumeFile
+          ? Buffer.from(await crossVolumeFile.arrayBuffer())
+          : undefined
+        const isCrossVolumeCsv = crossVolumeFile
+          ? crossVolumeFile.name.toLowerCase().endsWith('.csv')
+          : false
+
+        const { value: crossValueJson, volume: crossVolumeJson } = convertExcelFiles(
+          crossValueBuffer,
+          crossVolumeBuffer,
+          isCrossValueCsv,
+          isCrossVolumeCsv
+        )
+
+        const crossValueJsonWithAggs = addAggregationsToData(crossValueJson)
+        const crossVolumeJsonWithAggs = crossVolumeJson
+          ? addAggregationsToData(crossVolumeJson)
+          : undefined
+
+        const tempCrossValuePath = path.join(tempDir, `cross_value_${Date.now()}.json`)
+        const tempCrossVolumePath = crossVolumeJson
+          ? path.join(tempDir, `cross_volume_${Date.now()}.json`)
+          : null
+        const tempCrossSegPath = path.join(tempDir, `cross_seg_${Date.now()}.json`)
+
+        await writeFile(tempCrossValuePath, JSON.stringify(crossValueJsonWithAggs, null, 2), 'utf-8')
+        if (tempCrossVolumePath && crossVolumeJsonWithAggs) {
+          await writeFile(tempCrossVolumePath, JSON.stringify(crossVolumeJsonWithAggs, null, 2), 'utf-8')
+        }
+        const crossSegStructure = removeYearData(JSON.parse(JSON.stringify(crossValueJsonWithAggs)))
+        await writeFile(tempCrossSegPath, JSON.stringify(crossSegStructure, null, 2), 'utf-8')
+
+        const crossData = await loadAndProcessJsonFiles(
+          tempCrossValuePath,
+          tempCrossVolumePath,
+          tempCrossSegPath,
+          { volumeUnit: volumeUnitLabel }
+        )
+
+        // Clean up cross temp files
+        try {
+          await fs.unlink(tempCrossValuePath)
+          if (tempCrossVolumePath) await fs.unlink(tempCrossVolumePath)
+          await fs.unlink(tempCrossSegPath)
+        } catch {}
+
+        // Merge segment types from cross data into main dataset
+        for (const [segType, segDim] of Object.entries(crossData.dimensions.segments)) {
+          comparisonData.dimensions.segments[segType] = segDim
+          console.log(`Merged cross segment type: "${segType}"`)
+        }
+
+        // Merge geographies (cross file may introduce region/country geographies)
+        const existingGeoSet = new Set(comparisonData.dimensions.geographies.all_geographies)
+        const newGeos = crossData.dimensions.geographies.all_geographies.filter(g => !existingGeoSet.has(g))
+        if (newGeos.length > 0) {
+          comparisonData.dimensions.geographies.all_geographies.push(...newGeos)
+          const existingRegionSet = new Set(comparisonData.dimensions.geographies.regions)
+          crossData.dimensions.geographies.regions
+            .filter(r => !existingRegionSet.has(r))
+            .forEach(r => comparisonData.dimensions.geographies.regions.push(r))
+          for (const [region, countries] of Object.entries(crossData.dimensions.geographies.countries)) {
+            if (!comparisonData.dimensions.geographies.countries[region]) {
+              comparisonData.dimensions.geographies.countries[region] = countries
+            }
+          }
+          if (crossData.dimensions.geographies.geography_hierarchy) {
+            if (!comparisonData.dimensions.geographies.geography_hierarchy) {
+              comparisonData.dimensions.geographies.geography_hierarchy = {}
+            }
+            for (const [parent, children] of Object.entries(crossData.dimensions.geographies.geography_hierarchy)) {
+              if (!comparisonData.dimensions.geographies.geography_hierarchy[parent]) {
+                comparisonData.dimensions.geographies.geography_hierarchy[parent] = children
+              }
+            }
+          }
+          console.log(`Added ${newGeos.length} new geographies from cross data: ${newGeos.join(', ')}`)
+        }
+
+        // Merge records into the value matrix
+        comparisonData.data.value.geography_segment_matrix.push(
+          ...crossData.data.value.geography_segment_matrix
+        )
+        console.log(`Merged ${crossData.data.value.geography_segment_matrix.length} cross value records`)
+
+        // Merge records into the volume matrix (if cross volume data exists)
+        if (crossData.data.volume.geography_segment_matrix.length > 0) {
+          comparisonData.data.volume.geography_segment_matrix.push(
+            ...crossData.data.volume.geography_segment_matrix
+          )
+          comparisonData.metadata.has_volume = true
+          console.log(`Merged ${crossData.data.volume.geography_segment_matrix.length} cross volume records`)
+        }
+      } catch (crossError) {
+        console.error('Failed to process cross files (continuing without them):', crossError)
+      }
+    }
+    // ── End cross processing ─────────────────────────────────────────────────
+
     console.log('Excel/CSV processing completed successfully')
-    
+
+    const timingResult = timer.done({
+      valueBytes: valueBuffer.length,
+      volumeBytes: volumeBuffer?.length ?? 0,
+    })
+
+    logIngestTimings('process-excel', {
+      ...timingResult.stages,
+      totalMs: timingResult.totalMs,
+      valueBytes: timingResult.valueBytes,
+      volumeBytes: timingResult.volumeBytes,
+    })
+
+    if (ingestTimingsExposed()) {
+      return NextResponse.json({
+        ...comparisonData,
+        _ingestMetrics: {
+          ...timingResult.stages,
+          totalMs: timingResult.totalMs,
+          valueBytes: timingResult.valueBytes,
+          volumeBytes: timingResult.volumeBytes,
+        },
+      })
+    }
+
     return NextResponse.json(comparisonData)
   } catch (error) {
     console.error('Error processing Excel/CSV files:', error)

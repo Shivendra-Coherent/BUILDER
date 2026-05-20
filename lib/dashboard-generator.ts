@@ -18,6 +18,9 @@ interface IntelligencePackageData {
   intelligenceData: any | null
   proposition2Data: any | null
   proposition3Data: any | null
+  distributorIntelligenceData: any | null
+  distributorProposition2Data: any | null
+  distributorProposition3Data: any | null
   intelligenceType: string | null
 }
 
@@ -41,7 +44,10 @@ export async function generateDashboardFiles(
   const hasIntelligenceData = intelligencePackageData && (
     intelligencePackageData.intelligenceData ||
     intelligencePackageData.proposition2Data ||
-    intelligencePackageData.proposition3Data
+    intelligencePackageData.proposition3Data ||
+    intelligencePackageData.distributorIntelligenceData ||
+    intelligencePackageData.distributorProposition2Data ||
+    intelligencePackageData.distributorProposition3Data
   )
 
   // 1. Root files
@@ -191,6 +197,27 @@ export async function generateDashboardFiles(
     if (intelligencePackageData.proposition3Data) {
       addFile('public/data/proposition3_data.json', JSON.stringify(intelligencePackageData.proposition3Data, null, 2))
       console.log('Added proposition3_data.json to package')
+    }
+    if (intelligencePackageData.distributorIntelligenceData) {
+      addFile(
+        'public/data/distributor_intelligence_data.json',
+        JSON.stringify(intelligencePackageData.distributorIntelligenceData, null, 2)
+      )
+      console.log('Added distributor_intelligence_data.json to package')
+    }
+    if (intelligencePackageData.distributorProposition2Data) {
+      addFile(
+        'public/data/distributor_proposition2_data.json',
+        JSON.stringify(intelligencePackageData.distributorProposition2Data, null, 2)
+      )
+      console.log('Added distributor_proposition2_data.json to package')
+    }
+    if (intelligencePackageData.distributorProposition3Data) {
+      addFile(
+        'public/data/distributor_proposition3_data.json',
+        JSON.stringify(intelligencePackageData.distributorProposition3Data, null, 2)
+      )
+      console.log('Added distributor_proposition3_data.json to package')
     }
     // Store the intelligence type
     if (intelligencePackageData.intelligenceType) {
@@ -1052,7 +1079,15 @@ async function generatePage(hasIntelligenceData: boolean = false, intelligenceTy
     // Load intelligence data from JSON files
     async function loadIntelligenceData() {
       try {
-        const { setRawIntelligenceData, setProposition2Data, setProposition3Data, setIntelligenceType } = useDashboardStore.getState()
+        const {
+          setRawIntelligenceData,
+          setProposition2Data,
+          setProposition3Data,
+          setDistributorRawIntelligenceData,
+          setDistributorProposition2Data,
+          setDistributorProposition3Data,
+          setIntelligenceType
+        } = useDashboardStore.getState()
 
         // Load proposition 1 (basic) data
         try {
@@ -1083,6 +1118,30 @@ async function generatePage(hasIntelligenceData: boolean = false, intelligenceTy
             console.log('Loaded proposition3_data.json')
           }
         } catch (e) { console.log('No proposition3_data.json found') }
+
+        try {
+          const dr = await fetch('/data/distributor_intelligence_data.json')
+          if (dr.ok) {
+            setDistributorRawIntelligenceData(await dr.json())
+            console.log('Loaded distributor_intelligence_data.json')
+          }
+        } catch (e) { console.log('No distributor_intelligence_data.json found') }
+
+        try {
+          const d2 = await fetch('/data/distributor_proposition2_data.json')
+          if (d2.ok) {
+            setDistributorProposition2Data(await d2.json())
+            console.log('Loaded distributor_proposition2_data.json')
+          }
+        } catch (e) { console.log('No distributor_proposition2_data.json found') }
+
+        try {
+          const d3 = await fetch('/data/distributor_proposition3_data.json')
+          if (d3.ok) {
+            setDistributorProposition3Data(await d3.json())
+            console.log('Loaded distributor_proposition3_data.json')
+          }
+        } catch (e) { console.log('No distributor_proposition3_data.json found') }
 
         // Load intelligence config
         try {

@@ -384,6 +384,196 @@ function detectParentHeaders(row1: any[], row2: any[]): { hasParentHeaders: bool
   return { hasParentHeaders: true, parentHeaders }
 }
 
+/** First column normalized for matching S.No. style row markers */
+function normalizeFirstColCell(value: any): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\r\n/g, '\n')
+}
+
+/**
+ * Find the row index where the data table starts (parent / header row with S.No. etc.)
+ */
+function findHeaderBlockStartRow(rows: any[][]): number {
+  const markers = ['s.no.', 's.no', 's no.', 's no', 'sr.', 'sr no', 'serial no.', 'serial no']
+  for (let i = 0; i < Math.max(0, rows.length - 1); i++) {
+    const c0 = normalizeFirstColCell(rows[i]?.[0])
+    const normalized = c0.replace(/\.$/, '')
+    for (const m of markers) {
+      if (normalized === m) return i
+    }
+  }
+  for (let i = 0; i < rows.length - 1; i++) {
+    const d = detectParentHeaders(rows[i] || [], rows[i + 1] || [])
+    if (d.hasParentHeaders) return i
+  }
+  return -1
+}
+
+function pickPropositionSheetName(sheetNames: string[], propositionNumber: number): string | null {
+  const re = new RegExp(`proposition\\s*${propositionNumber}(?!\\d)`, 'i')
+  const matches = sheetNames.filter((n) => re.test(n))
+  return matches[0] || null
+}
+
+type IntelligenceSheetPayload = {
+  type: string
+  headers: string[]
+  parentHeaders: { name: string; startCol: number; colSpan: number }[] | null
+  rows: Record<string, any>[]
+  rowCount: number
+  sheetName: string
+}
+
+/**
+ * Process one sheet's grid (array-of-rows) into headers + rows (same shape as single-file API).
+ */
+function processIntelligenceJsonGrid(
+  jsonData: any[][],
+  intelligenceType: string,
+  sheetName: string
+): IntelligenceSheetPayload {
+  if (jsonData.length === 0) {
+    throw new Error(`Sheet "${sheetName}" has no rows`)
+  }
+
+  const headerStart = findHeaderBlockStartRow(jsonData)
+  if (headerStart < 0) {
+    throw new Error(
+      `Sheet "${sheetName}": could not find table headers. Expected a row starting with S.No. (or a two-row parent/child header block).`
+    )
+  }
+
+  const { hasParentHeaders, parentHeaders } = detectParentHeaders(
+    jsonData[headerStart] || [],
+    jsonData[headerStart + 1] || []
+  )
+
+  let headers: string[]
+  let dataStartRow: number
+
+  if (hasParentHeaders) {
+    headers = (jsonData[headerStart + 1] || []).map((h: any) => String(h || '').trim())
+    dataStartRow = headerStart + 2
+  } else {
+    headers = (jsonData[headerStart] || []).map((h: any) => String(h || '').trim())
+    dataStartRow = headerStart + 1
+  }
+
+  const headerIndices: number[] = []
+  const filteredHeaders: string[] = []
+  headers.forEach((h, index) => {
+    if (h) {
+      filteredHeaders.push(h)
+      headerIndices.push(index)
+    }
+  })
+
+  const rows = jsonData.slice(dataStartRow).filter((row) => {
+    return row.some((cell) => cell !== undefined && cell !== null && String(cell).trim() !== '')
+  }).map((row: any[], rowIndex: number) => {
+    const rowData: Record<string, any> = {}
+    filteredHeaders.forEach((header, idx) => {
+      const originalIndex = headerIndices[idx]
+      const value = row[originalIndex]
+
+      if (value === null || value === undefined || value === '') {
+        rowData[header] = ''
+      } else {
+        const stringValue = String(value).trim()
+        if (isPlaceholder(stringValue)) {
+          rowData[header] = generateDemoValue(header, rowIndex)
+        } else {
+          rowData[header] = stringValue
+        }
+      }
+    })
+    return rowData
+  })
+
+  let adjustedParentHeaders: { name: string; startCol: number; colSpan: number }[] = []
+  if (hasParentHeaders) {
+    adjustedParentHeaders = parentHeaders
+      .map((ph) => {
+        let newStartCol = -1
+        let newColSpan = 0
+
+        for (let i = 0; i < filteredHeaders.length; i++) {
+          const originalIndex = headerIndices[i]
+          if (originalIndex >= ph.startCol && originalIndex < ph.startCol + ph.colSpan) {
+            if (newStartCol === -1) newStartCol = i
+            newColSpan++
+          }
+        }
+
+        return {
+          name: ph.name,
+          startCol: newStartCol >= 0 ? newStartCol : 0,
+          colSpan: newColSpan > 0 ? newColSpan : 1,
+        }
+      })
+      .filter((ph) => ph.colSpan > 0)
+  }
+
+  return {
+    type: intelligenceType,
+    headers: filteredHeaders,
+    parentHeaders: hasParentHeaders ? adjustedParentHeaders : null,
+    rows,
+    rowCount: rows.length,
+    sheetName,
+  }
+}
+
+function processMultiPropositionWorkbook(
+  workbook: XLSX.WorkBook,
+  intelligenceType: string
+): {
+  success: true
+  multiPropositionFramework: true
+  proposition1: IntelligenceSheetPayload
+  proposition2: IntelligenceSheetPayload
+  proposition3: IntelligenceSheetPayload
+} {
+  const names = workbook.SheetNames
+  const s1 = pickPropositionSheetName(names, 1)
+  const s2 = pickPropositionSheetName(names, 2)
+  const s3 = pickPropositionSheetName(names, 3)
+
+  if (!s1) {
+    throw new Error(
+      'No worksheet found for Proposition 1. Name a sheet with "Proposition 1" (e.g. "Proposition 1 - Standard").'
+    )
+  }
+  if (!s2) {
+    throw new Error(
+      'No worksheet found for Proposition 2. Name a sheet with "Proposition 2" (e.g. "Proposition 2 - Advance").'
+    )
+  }
+  if (!s3) {
+    throw new Error(
+      'No worksheet found for Proposition 3. Name a sheet with "Proposition 3" (e.g. "Proposition 3 - Premium").'
+    )
+  }
+
+  const ws1 = workbook.Sheets[s1]
+  const ws2 = workbook.Sheets[s2]
+  const ws3 = workbook.Sheets[s3]
+
+  const grid1 = XLSX.utils.sheet_to_json(ws1, { header: 1, raw: true }) as any[][]
+  const grid2 = XLSX.utils.sheet_to_json(ws2, { header: 1, raw: true }) as any[][]
+  const grid3 = XLSX.utils.sheet_to_json(ws3, { header: 1, raw: true }) as any[][]
+
+  return {
+    success: true,
+    multiPropositionFramework: true,
+    proposition1: processIntelligenceJsonGrid(grid1, intelligenceType, s1),
+    proposition2: processIntelligenceJsonGrid(grid2, intelligenceType, s2),
+    proposition3: processIntelligenceJsonGrid(grid3, intelligenceType, s3),
+  }
+}
+
 /**
  * API Route to process Intelligence CSV/Excel files
  * Preserves data structure as-is and detects parent headers
@@ -492,7 +682,46 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Process first sheet only (for simplicity)
+    // Excel: if the workbook defines Proposition 1–3 sheets (e.g. sample framework), process all three at once
+    if (!isCsv) {
+      const names = workbook.SheetNames
+      const s1 = pickPropositionSheetName(names, 1)
+      const s2 = pickPropositionSheetName(names, 2)
+      const s3 = pickPropositionSheetName(names, 3)
+      if (s1 && s2 && s3) {
+        try {
+          const out = processMultiPropositionWorkbook(workbook, intelligenceType)
+          return createResponse(out)
+        } catch (e: any) {
+          return createResponse(
+            { error: e?.message || 'Failed to process multi-proposition workbook' },
+            400
+          )
+        }
+      }
+      if (s1) {
+        const grid = XLSX.utils.sheet_to_json(workbook.Sheets[s1], { header: 1, raw: true }) as any[][]
+        try {
+          const payload = processIntelligenceJsonGrid(grid, intelligenceType, s1)
+          return createResponse({
+            success: true,
+            data: {
+              type: payload.type,
+              headers: payload.headers,
+              parentHeaders: payload.parentHeaders,
+              rows: payload.rows,
+              rowCount: payload.rowCount,
+              sheetName: payload.sheetName,
+            },
+            message: `Processed ${payload.rowCount} rows from ${payload.sheetName}`,
+          })
+        } catch (e: any) {
+          return createResponse({ error: e?.message || 'Failed to process sheet' }, 400)
+        }
+      }
+    }
+
+    // Process first sheet only (CSV, or Excel without Proposition N sheet names)
     const firstSheetName = workbook.SheetNames[0]
     const worksheet = workbook.Sheets[firstSheetName]
 

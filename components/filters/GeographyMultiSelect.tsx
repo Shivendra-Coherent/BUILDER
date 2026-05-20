@@ -67,7 +67,7 @@ export function GeographyMultiSelect() {
     }))
   }, [data])
 
-  // Get all descendant names for a node (including itself)
+  // Self + all descendant names (walk subtree) — used for parent indeterminate state
   const getAllDescendants = useCallback((node: TreeNode): string[] => {
     const result = [node.name]
     for (const child of node.children) {
@@ -76,52 +76,35 @@ export function GeographyMultiSelect() {
     return result
   }, [])
 
-  // Get all leaf names (nodes with no children) under a node
-  const getAllLeaves = useCallback((node: TreeNode): string[] => {
-    if (node.children.length === 0) return [node.name]
-    const result: string[] = []
-    for (const child of node.children) {
-      result.push(...getAllLeaves(child))
-    }
-    return result
-  }, [])
-
-  // Determine checkbox state for a node
+  // Checkbox reflects only this row's geography name — no cascading to/from children or ancestors
   const getCheckState = useCallback((node: TreeNode): 'checked' | 'unchecked' | 'indeterminate' => {
     const selected = filters.geographies
 
     if (node.children.length === 0) {
-      // Leaf node
       return selected.includes(node.name) ? 'checked' : 'unchecked'
     }
 
-    // Parent node — check based on children
-    const allDescendants = getAllDescendants(node)
-    // Include self + all descendants
-    const allNames = allDescendants
-    const selectedCount = allNames.filter(n => selected.includes(n)).length
-
-    if (selectedCount === 0) return 'unchecked'
-    if (selectedCount === allNames.length) return 'checked'
-    return 'indeterminate'
+    const selfOn = selected.includes(node.name)
+    const descendants = getAllDescendants(node).filter(n => n !== node.name)
+    const anyDesc = descendants.some(n => selected.includes(n))
+    if (selfOn) return 'checked'
+    if (anyDesc) return 'indeterminate'
+    return 'unchecked'
   }, [filters.geographies, getAllDescendants])
 
-  // Toggle a node's selection
   const handleToggle = useCallback((node: TreeNode) => {
     const current = new Set(filters.geographies)
-    const allDescendants = getAllDescendants(node)
     const state = getCheckState(node)
+    const name = node.name
 
     if (state === 'checked') {
-      // Uncheck this node and all descendants
-      allDescendants.forEach(name => current.delete(name))
+      current.delete(name)
     } else {
-      // Check this node and all descendants
-      allDescendants.forEach(name => current.add(name))
+      current.add(name)
     }
 
     updateFilters({ geographies: Array.from(current) })
-  }, [filters.geographies, getAllDescendants, getCheckState, updateFilters])
+  }, [filters.geographies, getCheckState, updateFilters])
 
   // Toggle expand/collapse
   const toggleExpand = useCallback((nodeName: string, e?: React.MouseEvent) => {

@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { useDashboardStore } from '@/lib/store'
 import { CHART_GROUPS, type ChartGroupId } from '@/lib/chart-groups'
-import { BarChart3, Target, Trophy, Users, DollarSign } from 'lucide-react'
+import { BarChart3, Target, Trophy, Users, Building2, DollarSign } from 'lucide-react'
 
 // Icon mapping for each chart group
 const iconMap: Record<string, any> = {
@@ -11,6 +11,7 @@ const iconMap: Record<string, any> = {
   'coherent-opportunity': Target,
   'competitive-intelligence': Trophy,
   'customer-intelligence': Users,
+  'distributor-intelligence': Building2,
   'pricing-analysis': DollarSign,
 }
 
@@ -21,18 +22,33 @@ export function ChartGroupSelector() {
     rawIntelligenceData,
     proposition2Data,
     proposition3Data,
+    distributorRawIntelligenceData,
+    distributorProposition2Data,
+    distributorProposition3Data,
     customerIntelligenceData,
     distributorIntelligenceData,
     competitiveIntelligenceData,
-    pricingAnalysisData
+    pricingAnalysisData,
   } = useDashboardStore()
 
-  // Check if customer/distributor intelligence data exists (from proposition uploads)
-  const hasCustomerIntelligenceData = !!(
+  const hasCustomerWorkbookRows = !!(
     rawIntelligenceData?.rows?.length ||
     proposition2Data?.rows?.length ||
-    proposition3Data?.rows?.length ||
-    customerIntelligenceData?.length ||
+    proposition3Data?.rows?.length
+  )
+  const hasDistributorWorkbookRows = !!(
+    distributorRawIntelligenceData?.rows?.length ||
+    distributorProposition2Data?.rows?.length ||
+    distributorProposition3Data?.rows?.length
+  )
+
+  const hasCustomerIntelligenceData = !!(
+    hasCustomerWorkbookRows ||
+    customerIntelligenceData?.length
+  )
+
+  const hasDistributorIntelligenceData = !!(
+    hasDistributorWorkbookRows ||
     distributorIntelligenceData?.length
   )
 
@@ -50,6 +66,7 @@ export function ChartGroupSelector() {
   useEffect(() => {
     const isCurrentGroupInvalid =
       (selectedChartGroup === 'customer-intelligence' && !hasCustomerIntelligenceData) ||
+      (selectedChartGroup === 'distributor-intelligence' && !hasDistributorIntelligenceData) ||
       (selectedChartGroup === 'competitive-intelligence' && !hasCompetitiveIntelligenceData) ||
       (selectedChartGroup === 'pricing-analysis' && !hasPricingAnalysisData)
 
@@ -57,7 +74,14 @@ export function ChartGroupSelector() {
       // Switch to market-analysis as the default fallback
       setSelectedChartGroup('market-analysis')
     }
-  }, [selectedChartGroup, hasCustomerIntelligenceData, hasCompetitiveIntelligenceData, hasPricingAnalysisData, setSelectedChartGroup])
+  }, [
+    selectedChartGroup,
+    hasCustomerIntelligenceData,
+    hasDistributorIntelligenceData,
+    hasCompetitiveIntelligenceData,
+    hasPricingAnalysisData,
+    setSelectedChartGroup
+  ])
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
@@ -67,6 +91,10 @@ export function ChartGroupSelector() {
         {CHART_GROUPS.map((group) => {
           // Hide customer-intelligence group if no data exists
           if (group.id === 'customer-intelligence' && !hasCustomerIntelligenceData) {
+            return null
+          }
+
+          if (group.id === 'distributor-intelligence' && !hasDistributorIntelligenceData) {
             return null
           }
 
@@ -103,7 +131,9 @@ export function ChartGroupSelector() {
               <span className="text-xs font-medium leading-tight">
                 {group.label === 'Coherent Opportunity Matrix' 
                   ? <span>Coherent Opportunity<br/>Matrix</span>
-                  : group.label}
+                  : group.label === 'Distributor Intelligence'
+                    ? <span>Distributor<br/>Intelligence</span>
+                    : group.label}
               </span>
             </button>
           )

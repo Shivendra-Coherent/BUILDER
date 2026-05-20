@@ -1023,10 +1023,16 @@ async function processSegmentTypeAsync(
 /**
  * Process raw JSON data into ComparisonData format (Async version)
  */
+export type ProcessJsonOptions = {
+  /** Display label for volume axis/KPIs (e.g. "Million units", "Units") */
+  volumeUnit?: string
+}
+
 export async function processJsonDataAsync(
   valueData: RawJsonData,
   volumeData: RawJsonData | null,
-  segmentationData: RawJsonData | null
+  segmentationData: RawJsonData | null,
+  options?: ProcessJsonOptions
 ): Promise<ComparisonData> {
   try {
     console.log('Starting async processJsonData...')
@@ -1687,7 +1693,7 @@ export async function processJsonDataAsync(
       forecast_years: allYears.filter(y => y > baseYear),
       currency: 'USD',
       value_unit: 'Million',
-      volume_unit: 'Units',
+      volume_unit: options?.volumeUnit ?? 'Units',
       has_value: valueRecords.length > 0,
       has_volume: volumeRecords.length > 0,
     }
@@ -1738,7 +1744,8 @@ export function processJsonData(
 export async function loadAndProcessJsonFiles(
   valueJsonPath: string,
   volumeJsonPath: string | null = null,
-  segmentationJsonPath: string | null = null
+  segmentationJsonPath: string | null = null,
+  options?: ProcessJsonOptions
 ): Promise<ComparisonData> {
   try {
     console.log('Loading JSON files asynchronously...')
@@ -1807,7 +1814,7 @@ export async function loadAndProcessJsonFiles(
     
     // Process asynchronously
     console.log('Processing JSON data asynchronously...')
-    const result = await processJsonDataAsync(valueData!, volumeData, segmentationData)
+    const result = await processJsonDataAsync(valueData!, volumeData, segmentationData, options)
     console.log('JSON data processed successfully')
     
     return result

@@ -136,8 +136,14 @@ export function ExcelUploader({ onDataLoaded, onError }: ExcelUploaderProps) {
         throw new Error(`${errorMessage}${debugInfo}`)
       }
 
-      const data: ComparisonData = await response.json()
-      
+      const raw = await response.json()
+      const { _ingestMetrics, ...data } = raw as ComparisonData & {
+        _ingestMetrics?: Record<string, number>
+      }
+      if (_ingestMetrics) {
+        console.log('[process-excel] server metrics:', _ingestMetrics)
+      }
+
       setStatus('success')
       setStatusMessage('Excel/CSV files processed successfully!')
       

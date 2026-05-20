@@ -91,3 +91,321 @@
 .chart-bar-animate {
   animation: growUp 0.8s ease-out;
 }
+
+/* —— Landing hero —— */
+@keyframes hero-enter {
+  from {
+    opacity: 0;
+    transform: translateY(1.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hero-blur-in {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@keyframes gradient-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes blob-drift {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(2%, -2%) scale(1.03);
+  }
+  66% {
+    transform: translate(-2%, 1%) scale(0.98);
+  }
+}
+
+@keyframes shimmer-line {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+.landing-top-shimmer {
+  animation: shimmer-line 5s ease-in-out infinite;
+}
+
+.landing-blob-animate {
+  animation: blob-drift 22s ease-in-out infinite;
+}
+
+.landing-blob-animate-delayed {
+  animation: blob-drift 28s ease-in-out infinite reverse;
+}
+
+.animate-landing-hero-base {
+  animation: hero-enter 0.85s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-landing-delay-1 {
+  animation-delay: 0.1s;
+}
+
+.animate-landing-delay-2 {
+  animation-delay: 0.2s;
+}
+
+.animate-landing-delay-3 {
+  animation-delay: 0.35s;
+}
+
+.animate-landing-delay-4 {
+  animation-delay: 0.5s;
+}
+
+.animate-landing-delay-5 {
+  animation-delay: 0.62s;
+}
+
+.animate-landing-title {
+  animation: hero-blur-in 1s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.landing-gradient-text {
+  background-image: linear-gradient(
+    115deg,
+    #2563eb 0%,
+    #6366f1 25%,
+    #7c3aed 55%,
+    #2563eb 100%
+  );
+  background-size: 220% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradient-flow 10s ease-in-out infinite;
+}
+
+.landing-card-enter {
+  animation: hero-enter 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.landing-card-delay-1 {
+  animation-delay: 0.8s;
+}
+
+.landing-card-delay-2 {
+  animation-delay: 0.92s;
+}
+
+.landing-card-delay-3 {
+  animation-delay: 1.05s;
+}
+
+.landing-hover-card {
+  transition:
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.35s ease,
+    border-color 0.35s ease;
+}
+
+.landing-hover-card:hover {
+  transform: translateY(-6px);
+  box-shadow:
+    0 20px 40px -15px rgb(59 130 246 / 0.12),
+    0 0 0 1px rgb(226 232 240 / 0.9);
+}
+
+.landing-hover-card:active {
+  transform: translateY(-3px);
+}
+
+.landing-header-enter {
+  animation: hero-enter 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.landing-btn-pulse-ring {
+  position: relative;
+}
+
+.landing-btn-pulse-ring::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  background: transparent;
+  border: 2px solid rgb(59 130 246 / 0.35);
+  opacity: 0;
+  animation: landing-btn-ring 2.5s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes landing-btn-ring {
+  0% {
+    transform: scale(0.98);
+    opacity: 0.6;
+  }
+  70% {
+    transform: scale(1.06);
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Animated landing background — GPU-friendly transforms / background-position only */
+@keyframes landing-mesh-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes landing-grid-pan {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 40px 40px;
+  }
+}
+
+@keyframes blob-float-center {
+  0%,
+  100% {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translate(-50%, -4%) scale(1.12);
+    opacity: 0.75;
+  }
+}
+
+.landing-bg-stack {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.landing-bg-mesh {
+  position: absolute;
+  left: 50%;
+  top: 35%;
+  width: 180vmax;
+  height: 180vmax;
+  margin-left: -90vmax;
+  margin-top: -90vmax;
+  will-change: transform;
+  background: conic-gradient(
+    from 200deg at 50% 50%,
+    rgba(96, 165, 250, 0.14) 0deg,
+    rgba(167, 139, 250, 0.1) 100deg,
+    rgba(129, 140, 248, 0.12) 200deg,
+    rgba(147, 197, 253, 0.1) 300deg,
+    rgba(96, 165, 250, 0.14) 360deg
+  );
+  opacity: 0.55;
+  filter: blur(0px);
+  animation: landing-mesh-spin 100s linear infinite;
+}
+
+.landing-bg-grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.42;
+  background-image: radial-gradient(rgb(148 163 184 / 0.28) 1px, transparent 1px);
+  background-size: 40px 40px;
+  animation: landing-grid-pan 28s linear infinite;
+  mask-image: radial-gradient(ellipse 90% 75% at 50% 32%, rgb(0 0 0) 12%, transparent 62%);
+  -webkit-mask-image: radial-gradient(
+    ellipse 90% 75% at 50% 32%,
+    rgb(0 0 0) 12%,
+    transparent 62%
+  );
+}
+
+.landing-bg-orb-mid {
+  position: absolute;
+  left: 50%;
+  top: min(28vh, 18rem);
+  height: clamp(280px, 38vw, 420px);
+  width: clamp(320px, 55vw, 640px);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(147, 51, 234, 0.12) 0%,
+    rgba(99, 102, 241, 0.08) 45%,
+    transparent 72%
+  );
+  filter: blur(40px);
+  animation: blob-float-center 20s ease-in-out infinite;
+  will-change: transform;
+}
+
+.landing-content-layer {
+  position: relative;
+  z-index: 10;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-blob-animate,
+  .landing-blob-animate-delayed,
+  .landing-bg-mesh,
+  .landing-bg-grid,
+  .landing-bg-orb-mid,
+  .animate-landing-hero-base,
+  .animate-landing-title,
+  .landing-card-enter,
+  .landing-header-enter,
+  .landing-gradient-text,
+  .landing-btn-pulse-ring::after,
+  .landing-top-shimmer {
+    animation: none !important;
+  }
+
+  .animate-landing-hero-base,
+  .animate-landing-title,
+  .landing-card-enter,
+  .landing-header-enter {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+
+  .landing-gradient-text {
+    background-size: 100% auto;
+  }
+
+  .landing-hover-card:hover {
+    transform: none;
+  }
+
+  .landing-bg-orb-mid {
+    transform: translate(-50%, 0);
+    opacity: 0.62;
+  }
+}

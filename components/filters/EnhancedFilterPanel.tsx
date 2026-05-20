@@ -17,6 +17,9 @@ interface SelectedSegmentItem {
 
 export function EnhancedFilterPanel() {
   const { data, filters, updateFilters } = useDashboardStore()
+
+  const hasValue = !data || data.metadata.has_value
+  const hasVolume = !!data?.metadata.has_volume
   const [selectedSegmentType, setSelectedSegmentType] = useState<string>(
     filters.segmentType || (data?.dimensions?.segments ? Object.keys(data.dimensions.segments)[0] : 'By Drug Class')
   )
@@ -265,33 +268,39 @@ export function EnhancedFilterPanel() {
   return (
     <div className="bg-white rounded-lg shadow-sm p-2.5 space-y-2">
       {/* Data Type Selection */}
-      <div>
-        <label className="text-xs font-medium text-black uppercase">
-          Data Type
-        </label>
-        <div className="flex gap-1 mt-1">
-          <button
-            onClick={() => updateFilters({ dataType: 'value' })}
-            className={`flex-1 px-3 py-1.5 text-sm rounded ${
-              filters.dataType === 'value'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-black hover:bg-gray-200'
-            }`}
-          >
-            Value
-          </button>
-          <button
-            onClick={() => updateFilters({ dataType: 'volume' })}
-            className={`flex-1 px-3 py-1.5 text-sm rounded ${
-              filters.dataType === 'volume'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-black hover:bg-gray-200'
-            }`}
-          >
-            Volume
-          </button>
+      {(hasValue || hasVolume) && (
+        <div>
+          <label className="text-xs font-medium text-black uppercase">
+            Data Type
+          </label>
+          <div className="flex gap-1 mt-1">
+            {hasValue && (
+              <button
+                onClick={() => updateFilters({ dataType: 'value' })}
+                className={`flex-1 px-3 py-1.5 text-sm rounded ${
+                  filters.dataType === 'value'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-black hover:bg-gray-200'
+                }`}
+              >
+                Value
+              </button>
+            )}
+            {hasVolume && (
+              <button
+                onClick={() => updateFilters({ dataType: 'volume' })}
+                className={`flex-1 px-3 py-1.5 text-sm rounded ${
+                  filters.dataType === 'volume'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-black hover:bg-gray-200'
+                }`}
+              >
+                Volume
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* View Mode */}
       <div>

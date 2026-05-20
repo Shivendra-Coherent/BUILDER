@@ -9,7 +9,10 @@ import { AggregationLevelSelector } from './AggregationLevelSelector'
 import { RotateCcw } from 'lucide-react'
 
 export function FilterPanel() {
-  const { filters, updateFilters, resetFilters } = useDashboardStore()
+  const { data, filters, updateFilters, resetFilters } = useDashboardStore()
+
+  const hasValue = !data || data.metadata.has_value
+  const hasVolume = !!data?.metadata.has_volume
 
   const handleDataTypeChange = (dataType: 'value' | 'volume') => {
     updateFilters({ dataType })
@@ -40,33 +43,39 @@ export function FilterPanel() {
       </div>
 
       {/* Data Type Toggle */}
-      <div>
-        <label className="block text-sm font-medium text-black mb-2">
-          Data Type
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            onClick={() => handleDataTypeChange('value')}
-            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-              filters.dataType === 'value'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-black hover:bg-gray-200'
-            }`}
-          >
-            Value
-          </button>
-          <button
-            onClick={() => handleDataTypeChange('volume')}
-            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-              filters.dataType === 'volume'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-black hover:bg-gray-200'
-            }`}
-          >
-            Volume
-          </button>
+      {(hasValue || hasVolume) && (
+        <div>
+          <label className="block text-sm font-medium text-black mb-2">
+            Data Type
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            {hasValue && (
+              <button
+                onClick={() => handleDataTypeChange('value')}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                  filters.dataType === 'value'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-black hover:bg-gray-200'
+                }`}
+              >
+                Value
+              </button>
+            )}
+            {hasVolume && (
+              <button
+                onClick={() => handleDataTypeChange('volume')}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                  filters.dataType === 'volume'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-black hover:bg-gray-200'
+                }`}
+              >
+                Volume
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* View Mode Selector */}
       <div>

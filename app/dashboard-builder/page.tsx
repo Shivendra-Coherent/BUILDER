@@ -1,13 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, type Dispatch, type SetStateAction } from 'react'
 import { useRouter } from 'next/navigation'
 import { Upload, Loader2, CheckCircle2, XCircle, FileSpreadsheet, Eye, Users, Building2, ArrowRight, TrendingUp, DollarSign } from 'lucide-react'
 import Image from 'next/image'
 import { useDashboardStore } from '@/lib/store'
 import type { ComparisonData } from '@/lib/types'
-import type { IntelligenceType } from '@/components/dashboard-builder/IntelligenceDataInput'
-import { IntelligenceDataInput } from '@/components/dashboard-builder/IntelligenceDataInput'
+import { IntelligenceDataInput, type IntelligenceMode } from '@/components/dashboard-builder/IntelligenceDataInput'
+
+function modeToStoreType(m: IntelligenceMode): 'customer' | 'distributor' | 'both' | null {
+  if (m.customer && m.distributor) return 'both'
+  if (m.customer) return 'customer'
+  if (m.distributor) return 'distributor'
+  return null
+}
 
 export default function DashboardBuilderPage() {
   const router = useRouter()
@@ -17,12 +23,13 @@ export default function DashboardBuilderPage() {
     setError, 
     clearData,
     setIntelligenceType,
-    setCustomerIntelligenceData,
-    setDistributorIntelligenceData,
     setParentHeaders,
     setRawIntelligenceData,
     setProposition2Data,
     setProposition3Data,
+    setDistributorRawIntelligenceData,
+    setDistributorProposition2Data,
+    setDistributorProposition3Data,
     setCompetitiveIntelligenceData,
     setPricingAnalysisData,
     setDashboardName,
@@ -33,32 +40,42 @@ export default function DashboardBuilderPage() {
   // Section 1: Market Intelligence
   const [dashboardNameInput, setDashboardNameInput] = useState('India Market Analysis')
   const [currencyInput, setCurrencyInput] = useState<'USD' | 'INR'>('USD')
+  const [volumeUnitInput, setVolumeUnitInput] = useState<
+    'million-units' | 'units' | 'th-units' | 'tons'
+  >('units')
   const [valueFile, setValueFile] = useState<File | null>(null)
   const [volumeFile, setVolumeFile] = useState<File | null>(null)
+  const [crossValueFile, setCrossValueFile] = useState<File | null>(null)
+  const [crossVolumeFile, setCrossVolumeFile] = useState<File | null>(null)
   const [isProcessingMarket, setIsProcessingMarket] = useState(false)
   const [marketStatus, setMarketStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle')
   const [marketStatusMessage, setMarketStatusMessage] = useState('')
   const [processedData, setProcessedData] = useState<ComparisonData | null>(null)
   const [showDemoNoteToggle, setShowDemoNoteToggle] = useState(false)
+  const [shareUrl, setShareUrl] = useState<string | null>(null)
+  const [isGeneratingLink, setIsGeneratingLink] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
+  const [shareLinkError, setShareLinkError] = useState<string | null>(null)
   
   // Section 2: Intelligence Data (Optional)
-  const [intelligenceType, setLocalIntelligenceType] = useState<IntelligenceType>('customer')
-  const [intelligenceFile, setIntelligenceFile] = useState<File | null>(null)
-  const [intelligenceFileData, setIntelligenceFileData] = useState<{ name: string; data: string } | null>(null)
-  const [proposition2File, setProposition2File] = useState<File | null>(null)
-  const [proposition2FileData, setProposition2FileData] = useState<{ name: string; data: string } | null>(null)
-  const [proposition3File, setProposition3File] = useState<File | null>(null)
-  const [proposition3FileData, setProposition3FileData] = useState<{ name: string; data: string } | null>(null)
-  const [isProcessingIntelligence, setIsProcessingIntelligence] = useState(false)
-  const [intelligenceStatus, setIntelligenceStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle')
-  const [intelligenceStatusMessage, setIntelligenceStatusMessage] = useState('')
-  const [hasIntelligenceData, setHasIntelligenceData] = useState(false)
+  const [intelMode, setIntelMode] = useState<IntelligenceMode>({ customer: true, distributor: false })
+  const [customerIntelFile, setCustomerIntelFile] = useState<File | null>(null)
+  const [customerIntelFileData, setCustomerIntelFileData] = useState<{ name: string; data: string } | null>(null)
+  const [distributorIntelFile, setDistributorIntelFile] = useState<File | null>(null)
+  const [distributorIntelFileData, setDistributorIntelFileData] = useState<{ name: string; data: string } | null>(null)
+  const [intelProcessing, setIntelProcessing] = useState<null | 'customer' | 'distributor'>(null)
+  const [customerIntelStatus, setCustomerIntelStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle')
+  const [customerIntelStatusMessage, setCustomerIntelStatusMessage] = useState('')
+  const [distributorIntelStatus, setDistributorIntelStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle')
+  const [distributorIntelStatusMessage, setDistributorIntelStatusMessage] = useState('')
   const [activeTab, setActiveTab] = useState<'market' | 'intelligence' | 'competitive' | 'pricing'>('market')
 
-  // Drag and drop states
-  const [isDraggingIntelligence, setIsDraggingIntelligence] = useState(false)
-  const [isDraggingProp2, setIsDraggingProp2] = useState(false)
-  const [isDraggingProp3, setIsDraggingProp3] = useState(false)
+  useEffect(() => {
+    setIntelligenceType(modeToStoreType(intelMode))
+  }, [intelMode, setIntelligenceType])
+
+  const [isDraggingCustomerIntel, setIsDraggingCustomerIntel] = useState(false)
+  const [isDraggingDistributorIntel, setIsDraggingDistributorIntel] = useState(false)
 
   // Section 3: Competitive Intelligence Data
   const [competitiveFile, setCompetitiveFile] = useState<File | null>(null)
@@ -87,149 +104,86 @@ export default function DashboardBuilderPage() {
     }
   }
 
-  const handleIntelligenceFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCrossValueFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0]
-      setIntelligenceFile(file)
-      setIntelligenceStatus('idle')
-      setIntelligenceStatusMessage('Reading file...')
-
-      // Create a FileReader and read synchronously in the event handler
-      const reader = new FileReader()
-
-      reader.onload = (event) => {
-        try {
-          const result = event.target?.result as string
-          if (result) {
-            const base64 = result.split(',')[1]
-            if (base64) {
-              setIntelligenceFileData({ name: file.name, data: base64 })
-              setIntelligenceStatusMessage('')
-              console.log('Intelligence file read successfully:', file.name, 'base64 length:', base64.length)
-            } else {
-              throw new Error('Failed to extract base64 data')
-            }
-          } else {
-            throw new Error('FileReader returned empty result')
-          }
-        } catch (error: any) {
-          console.error('Error processing file:', error)
-          setIntelligenceStatus('error')
-          setIntelligenceStatusMessage(`Error reading file: ${error.message}`)
-          setIntelligenceFileData(null)
-        }
-      }
-
-      reader.onerror = () => {
-        console.error('FileReader error:', reader.error)
-        setIntelligenceStatus('error')
-        const errorMsg = reader.error?.message || 'Unknown error'
-        if (errorMsg.includes('NotReadableError') || reader.error?.name === 'NotReadableError') {
-          setIntelligenceStatusMessage('File cannot be read due to Windows permissions. Please copy the file to your Documents folder and try again.')
-        } else {
-          setIntelligenceStatusMessage(`Error reading file: ${errorMsg}`)
-        }
-        setIntelligenceFileData(null)
-      }
-
-      // Start reading immediately - this happens synchronously in the event loop
-      reader.readAsDataURL(file)
+      setCrossValueFile(e.target.files[0])
     }
   }
 
-  const handleProposition2FileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCrossVolumeFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0]
-      setProposition2File(file)
-      setIntelligenceStatusMessage('Reading Proposition 2 file...')
-
-      // Use FileReader instead of arrayBuffer for better Windows compatibility
-      const reader = new FileReader()
-
-      reader.onload = (event) => {
-        try {
-          const result = event.target?.result as string
-          if (result) {
-            const base64 = result.split(',')[1]
-            if (base64) {
-              setProposition2FileData({ name: file.name, data: base64 })
-              setIntelligenceStatusMessage('')
-              console.log('Proposition 2 file read successfully:', file.name, 'base64 length:', base64.length)
-            } else {
-              throw new Error('Failed to extract base64 data')
-            }
-          } else {
-            throw new Error('FileReader returned empty result')
-          }
-        } catch (error: any) {
-          console.error('Error processing proposition 2 file:', error)
-          setIntelligenceStatus('error')
-          setIntelligenceStatusMessage(`Error reading Proposition 2 file: ${error.message}`)
-          setProposition2FileData(null)
-        }
-      }
-
-      reader.onerror = () => {
-        console.error('FileReader error for Proposition 2:', reader.error)
-        setIntelligenceStatus('error')
-        const errorMsg = reader.error?.message || 'Unknown error'
-        if (errorMsg.includes('NotReadableError') || reader.error?.name === 'NotReadableError') {
-          setIntelligenceStatusMessage('Proposition 2 file cannot be read. Please copy the file to your Documents folder and try again.')
-        } else {
-          setIntelligenceStatusMessage(`Error reading Proposition 2 file: ${errorMsg}`)
-        }
-        setProposition2FileData(null)
-      }
-
-      reader.readAsDataURL(file)
+      setCrossVolumeFile(e.target.files[0])
     }
   }
 
-  const handleProposition3FileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0]
-      setProposition3File(file)
-      setIntelligenceStatusMessage('Reading Proposition 3 file...')
+  const readIntelFileToState = (
+    file: File,
+    setFile: Dispatch<SetStateAction<File | null>>,
+    setFileData: Dispatch<SetStateAction<{ name: string; data: string } | null>>,
+    setStatus: Dispatch<SetStateAction<'idle' | 'processing' | 'success' | 'error'>>,
+    setStatusMessage: Dispatch<SetStateAction<string>>
+  ) => {
+    setFile(file)
+    setStatus('idle')
+    setStatusMessage('Reading file...')
 
-      // Use FileReader instead of arrayBuffer for better Windows compatibility
-      const reader = new FileReader()
+    const reader = new FileReader()
 
-      reader.onload = (event) => {
-        try {
-          const result = event.target?.result as string
-          if (result) {
-            const base64 = result.split(',')[1]
-            if (base64) {
-              setProposition3FileData({ name: file.name, data: base64 })
-              setIntelligenceStatusMessage('')
-              console.log('Proposition 3 file read successfully:', file.name, 'base64 length:', base64.length)
-            } else {
-              throw new Error('Failed to extract base64 data')
-            }
+    reader.onload = (event) => {
+      try {
+        const result = event.target?.result as string
+        if (result) {
+          const base64 = result.split(',')[1]
+          if (base64) {
+            setFileData({ name: file.name, data: base64 })
+            setStatusMessage('')
+            console.log('Intelligence file read successfully:', file.name, 'base64 length:', base64.length)
           } else {
-            throw new Error('FileReader returned empty result')
+            throw new Error('Failed to extract base64 data')
           }
-        } catch (error: any) {
-          console.error('Error processing proposition 3 file:', error)
-          setIntelligenceStatus('error')
-          setIntelligenceStatusMessage(`Error reading Proposition 3 file: ${error.message}`)
-          setProposition3FileData(null)
-        }
-      }
-
-      reader.onerror = () => {
-        console.error('FileReader error for Proposition 3:', reader.error)
-        setIntelligenceStatus('error')
-        const errorMsg = reader.error?.message || 'Unknown error'
-        if (errorMsg.includes('NotReadableError') || reader.error?.name === 'NotReadableError') {
-          setIntelligenceStatusMessage('Proposition 3 file cannot be read. Please copy the file to your Documents folder and try again.')
         } else {
-          setIntelligenceStatusMessage(`Error reading Proposition 3 file: ${errorMsg}`)
+          throw new Error('FileReader returned empty result')
         }
-        setProposition3FileData(null)
+      } catch (error: any) {
+        console.error('Error processing file:', error)
+        setStatus('error')
+        setStatusMessage(`Error reading file: ${error.message}`)
+        setFileData(null)
       }
+    }
 
-      reader.readAsDataURL(file)
+    reader.onerror = () => {
+      console.error('FileReader error:', reader.error)
+      setStatus('error')
+      const errorMsg = reader.error?.message || 'Unknown error'
+      if (errorMsg.includes('NotReadableError') || reader.error?.name === 'NotReadableError') {
+        setStatusMessage('File cannot be read due to Windows permissions. Please copy the file to your Documents folder and try again.')
+      } else {
+        setStatusMessage(`Error reading file: ${errorMsg}`)
+      }
+      setFileData(null)
+    }
+
+    reader.readAsDataURL(file)
+  }
+
+  const handleCustomerIntelFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    if (f) {
+      readIntelFileToState(f, setCustomerIntelFile, setCustomerIntelFileData, setCustomerIntelStatus, setCustomerIntelStatusMessage)
+    }
+  }
+
+  const handleDistributorIntelFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    if (f) {
+      readIntelFileToState(
+        f,
+        setDistributorIntelFile,
+        setDistributorIntelFileData,
+        setDistributorIntelStatus,
+        setDistributorIntelStatusMessage
+      )
     }
   }
 
@@ -305,73 +259,38 @@ export default function DashboardBuilderPage() {
     reader.readAsDataURL(file)
   }
 
-  // Intelligence file drop handler
-  const handleIntelligenceDrop = (e: React.DragEvent<HTMLDivElement>) => {
+  // Intelligence file drop handlers
+  const handleCustomerIntelDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     e.stopPropagation()
-    setIsDraggingIntelligence(false)
+    setIsDraggingCustomerIntel(false)
 
     const files = e.dataTransfer.files
     if (files && files.length > 0) {
       processDroppedFile(
         files[0],
-        setIntelligenceFile,
-        setIntelligenceFileData,
-        setIntelligenceStatus,
-        setIntelligenceStatusMessage
+        setCustomerIntelFile,
+        setCustomerIntelFileData,
+        setCustomerIntelStatus,
+        setCustomerIntelStatusMessage
       )
     }
   }
 
-  // Proposition 2 drop handler
-  const handleProp2Drop = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleDistributorIntelDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     e.stopPropagation()
-    setIsDraggingProp2(false)
+    setIsDraggingDistributorIntel(false)
 
     const files = e.dataTransfer.files
     if (files && files.length > 0) {
-      const file = files[0]
-      setProposition2File(file)
-
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        const result = event.target?.result as string
-        if (result) {
-          const base64 = result.split(',')[1]
-          if (base64) {
-            setProposition2FileData({ name: file.name, data: base64 })
-            console.log('Proposition 2 dropped file read successfully:', file.name)
-          }
-        }
-      }
-      reader.readAsDataURL(file)
-    }
-  }
-
-  // Proposition 3 drop handler
-  const handleProp3Drop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDraggingProp3(false)
-
-    const files = e.dataTransfer.files
-    if (files && files.length > 0) {
-      const file = files[0]
-      setProposition3File(file)
-
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        const result = event.target?.result as string
-        if (result) {
-          const base64 = result.split(',')[1]
-          if (base64) {
-            setProposition3FileData({ name: file.name, data: base64 })
-            console.log('Proposition 3 dropped file read successfully:', file.name)
-          }
-        }
-      }
-      reader.readAsDataURL(file)
+      processDroppedFile(
+        files[0],
+        setDistributorIntelFile,
+        setDistributorIntelFileData,
+        setDistributorIntelStatus,
+        setDistributorIntelStatusMessage
+      )
     }
   }
 
@@ -393,6 +312,96 @@ export default function DashboardBuilderPage() {
     setDragging(false)
   }
 
+  // Generate a shareable permanent link for the current dashboard
+  const handleGenerateLink = async () => {
+    const storeState = useDashboardStore.getState()
+    const {
+      data,
+      dashboardName: name,
+      currency,
+      intelligenceType,
+      rawIntelligenceData,
+      proposition2Data,
+      proposition3Data,
+      distributorRawIntelligenceData,
+      distributorProposition2Data,
+      distributorProposition3Data,
+      pricingAnalysisData,
+      showDemoNote,
+    } = storeState
+
+    if (!data && !rawIntelligenceData && !pricingAnalysisData) {
+      setShareLinkError('Please process your dashboard data first before generating a link.')
+      return
+    }
+
+    setIsGeneratingLink(true)
+    setShareLinkError(null)
+
+    try {
+      const payload = {
+        name: name || dashboardNameInput || 'Untitled Dashboard',
+        currency: currency || currencyInput,
+        data,
+        intelligenceType,
+        rawIntelligenceData,
+        proposition2Data,
+        proposition3Data,
+        distributorRawIntelligenceData,
+        distributorProposition2Data,
+        distributorProposition3Data,
+        pricingAnalysisData,
+        showDemoNote,
+      }
+
+      const serialised = JSON.stringify(payload)
+      if (serialised.length > 48 * 1024 * 1024) {
+        setShareLinkError(`Dashboard data is too large (~${(serialised.length / 1_048_576).toFixed(0)} MB). Try reducing segments or geographies.`)
+        return
+      }
+
+      const res = await fetch('/api/dashboards/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: serialised,
+      })
+
+      let body: any
+      try { body = await res.json() } catch { body = {} }
+
+      if (!res.ok) {
+        throw new Error(body?.error || `Server error (${res.status})`)
+      }
+
+      setShareUrl(body.shareUrl)
+    } catch (err) {
+      setShareLinkError(err instanceof Error ? err.message : 'Could not generate link – please try again.')
+    } finally {
+      setIsGeneratingLink(false)
+    }
+  }
+
+  const handleCopyLink = async () => {
+    if (!shareUrl) return
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 2500)
+    } catch {
+      const el = document.createElement('input')
+      el.value = shareUrl
+      el.style.position = 'fixed'
+      el.style.opacity = '0'
+      document.body.appendChild(el)
+      el.focus()
+      el.select()
+      try { document.execCommand('copy') } catch {}
+      document.body.removeChild(el)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 2500)
+    }
+  }
+
   // Process Market Intelligence Data
   const handleProcessMarketIntelligence = async () => {
     if (!valueFile) {
@@ -411,6 +420,13 @@ export default function DashboardBuilderPage() {
       if (volumeFile) {
         formData.append('volumeFile', volumeFile)
       }
+      formData.append('volumeUnit', volumeUnitInput)
+      if (crossValueFile) {
+        formData.append('crossValueFile', crossValueFile)
+      }
+      if (crossVolumeFile) {
+        formData.append('crossVolumeFile', crossVolumeFile)
+      }
 
       const response = await fetch('/api/process-excel', {
         method: 'POST',
@@ -422,8 +438,14 @@ export default function DashboardBuilderPage() {
         throw new Error(errorData.details || errorData.error || 'Failed to process files')
       }
 
-      const data: ComparisonData = await response.json()
-      
+      const raw = await response.json()
+      const { _ingestMetrics, ...data } = raw as ComparisonData & {
+        _ingestMetrics?: Record<string, number>
+      }
+      if (_ingestMetrics) {
+        console.log('[process-excel] server metrics:', _ingestMetrics)
+      }
+
       // Clear old data and set new data
       clearData()
       setData(data)
@@ -498,7 +520,6 @@ export default function DashboardBuilderPage() {
 
   // Helper function to upload pre-read file data
   const uploadFileData = async (url: string, fileData: { name: string; data: string }, intelligenceType: string): Promise<any> => {
-    setIntelligenceStatusMessage('Uploading...')
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -519,128 +540,124 @@ export default function DashboardBuilderPage() {
     return response.json()
   }
 
-  // Process Intelligence Data
-  const handleProcessIntelligenceFile = async () => {
-    if (!intelligenceFileData) {
-      setIntelligenceStatus('error')
-      setIntelligenceStatusMessage('Please select a file to upload. If you already selected a file, try selecting it again.')
+  const applyIntelligenceApiResult = (
+    result: any,
+    target: 'customer' | 'distributor',
+    onSuccessMessage: (msg: string) => void
+  ) => {
+    const setP1 = target === 'customer' ? setRawIntelligenceData : setDistributorRawIntelligenceData
+    const setP2 = target === 'customer' ? setProposition2Data : setDistributorProposition2Data
+    const setP3 = target === 'customer' ? setProposition3Data : setDistributorProposition3Data
+
+    if (
+      result.multiPropositionFramework &&
+      result.proposition1 &&
+      result.proposition2 &&
+      result.proposition3
+    ) {
+      const p1 = result.proposition1
+      const p2 = result.proposition2
+      const p3 = result.proposition3
+
+      setP1({
+        headers: p1.headers || [],
+        rows: p1.rows || [],
+        parentHeaders: p1.parentHeaders ?? null,
+      })
+      setP2({
+        headers: p2.headers || [],
+        rows: p2.rows || [],
+        parentHeaders: p2.parentHeaders ?? null,
+      })
+      setP3({
+        headers: p3.headers || [],
+        rows: p3.rows || [],
+        parentHeaders: p3.parentHeaders ?? null,
+      })
+      setIntelligenceType(modeToStoreType(intelMode))
+      onSuccessMessage(
+        `Processed workbook: ${p1.rowCount} rows (${p1.sheetName}), ${p2.rowCount} rows (${p2.sheetName}), ${p3.rowCount} rows (${p3.sheetName})`
+      )
       return
     }
 
-    setIsProcessingIntelligence(true)
-    setIntelligenceStatus('processing')
-    setIntelligenceStatusMessage('Uploading file...')
+    if (!result.data) {
+      throw new Error('Invalid response from server')
+    }
+
+    const processedData = result.data
+
+    setP1({
+      headers: processedData.headers || [],
+      rows: processedData.rows || [],
+      parentHeaders: processedData.parentHeaders || null,
+    })
+    setP2(null)
+    setP3(null)
+    setIntelligenceType(modeToStoreType(intelMode))
+    onSuccessMessage(
+      `Processed ${processedData.rows?.length || 0} rows${processedData.sheetName ? ` from ${processedData.sheetName}` : ''}`
+    )
+  }
+
+  const handleProcessIntelligenceForTarget = async (target: 'customer' | 'distributor') => {
+    const fileData = target === 'customer' ? customerIntelFileData : distributorIntelFileData
+    const setStatus = target === 'customer' ? setCustomerIntelStatus : setDistributorIntelStatus
+    const setStatusMessage = target === 'customer' ? setCustomerIntelStatusMessage : setDistributorIntelStatusMessage
+
+    if (!fileData) {
+      setStatus('error')
+      setStatusMessage(
+        'Please select a file to upload. If you already selected a file, try selecting it again.'
+      )
+      return
+    }
+
+    setIntelProcessing(target)
+    setStatus('processing')
+    setStatusMessage('Uploading file...')
 
     try {
-      // IMPORTANT: Clear ALL proposition data first to ensure only uploaded files show
-      // This prevents stale data from previous uploads from appearing
-      setRawIntelligenceData(null)
-      setProposition2Data(null)
-      setProposition3Data(null)
+      if (target === 'customer') {
+        setRawIntelligenceData(null)
+        setProposition2Data(null)
+        setProposition3Data(null)
+      } else {
+        setDistributorRawIntelligenceData(null)
+        setDistributorProposition2Data(null)
+        setDistributorProposition3Data(null)
+      }
 
-      // Use pre-read file data (more reliable than reading at upload time)
-      const result = await uploadFileData('/api/process-intelligence-file', intelligenceFileData, intelligenceType)
+      const apiType = target === 'customer' ? 'customer' : 'distributor'
 
-      if (!result.success || !result.data) {
+      const result = await uploadFileData('/api/process-intelligence-file', fileData, apiType)
+
+      if (!result.success) {
         throw new Error('Invalid response from server')
       }
 
-      const processedData = result.data
-
-      setRawIntelligenceData({
-        headers: processedData.headers || [],
-        rows: processedData.rows || [],
-        parentHeaders: processedData.parentHeaders || null
+      applyIntelligenceApiResult(result, target, (msg) => {
+        setStatus('success')
+        setStatusMessage(msg)
       })
-      setIntelligenceType(intelligenceType)
-      
-      let processedCount = 1
-      let message = `Processed ${processedData.rows?.length || 0} rows from Proposition 1`
-      
-      // Process Proposition 2 if file is uploaded
-      if (proposition2FileData) {
-        try {
-          setIntelligenceStatusMessage('Processing Proposition 2...')
-          const prop2Result = await uploadFileData('/api/process-intelligence-file', proposition2FileData, intelligenceType)
-
-          if (prop2Result.success && prop2Result.data) {
-            setProposition2Data({
-              headers: prop2Result.data.headers || [],
-              rows: prop2Result.data.rows || [],
-              parentHeaders: prop2Result.data.parentHeaders || null
-            })
-            processedCount++
-            message += `, ${prop2Result.data.rows?.length || 0} rows from Proposition 2`
-          }
-        } catch (error) {
-          console.warn('Failed to process Proposition 2 file:', error)
-        }
-      }
-
-      // Process Proposition 3 if file is uploaded
-      if (proposition3FileData) {
-        try {
-          setIntelligenceStatusMessage('Processing Proposition 3...')
-          const prop3Result = await uploadFileData('/api/process-intelligence-file', proposition3FileData, intelligenceType)
-
-          if (prop3Result.success && prop3Result.data) {
-            setProposition3Data({
-              headers: prop3Result.data.headers || [],
-              rows: prop3Result.data.rows || [],
-              parentHeaders: prop3Result.data.parentHeaders || null
-            })
-            processedCount++
-            message += `, ${prop3Result.data.rows?.length || 0} rows from Proposition 3`
-          }
-        } catch (error) {
-          console.warn('Failed to process Proposition 3 file:', error)
-        }
-      }
-      
-      setHasIntelligenceData(true)
-      setIntelligenceStatus('success')
-      setIntelligenceStatusMessage(message)
     } catch (error: any) {
       console.error('Error processing intelligence file:', error)
-      setIntelligenceStatus('error')
+      setStatus('error')
 
       let errorMessage = 'Failed to process intelligence file'
       if (error.message) {
         errorMessage = error.message
       }
 
-      // Add helpful suggestions based on error type
       if (errorMessage.includes('Network error') || errorMessage.includes('ERR_ACCESS_DENIED')) {
-        errorMessage += '\n\nTroubleshooting:\n• Make sure the file is not open in Excel\n• Try closing and reopening your browser\n• Check if antivirus is blocking the upload'
+        errorMessage +=
+          '\n\nTroubleshooting:\n• Make sure the file is not open in Excel\n• Try closing and reopening your browser\n• Check if antivirus is blocking the upload'
       }
 
-      setIntelligenceStatusMessage(errorMessage)
+      setStatusMessage(errorMessage)
     } finally {
-      setIsProcessingIntelligence(false)
+      setIntelProcessing(null)
     }
-  }
-
-  // Handle intelligence data save from IntelligenceDataInput component
-  const handleIntelligenceDataSave = (data: any[]) => {
-    if (intelligenceType === 'customer') {
-      setCustomerIntelligenceData(data)
-    } else {
-      setDistributorIntelligenceData(data)
-    }
-    setHasIntelligenceData(true)
-  }
-
-  // Handle auto-save from IntelligenceDataInput component (for bulk paste)
-  const handleIntelligenceAutoSave = (data: any[], parentHeaders?: { prop1: string; prop2: string; prop3: string }) => {
-    if (intelligenceType === 'customer') {
-      setCustomerIntelligenceData(data)
-    } else {
-      setDistributorIntelligenceData(data)
-    }
-    if (parentHeaders) {
-      setParentHeaders(parentHeaders)
-    }
-    setHasIntelligenceData(true)
   }
 
   // Process Competitive Intelligence Data
@@ -742,16 +759,51 @@ export default function DashboardBuilderPage() {
     }
   }
 
+  const hadIntelligenceUploadSuccess =
+    (intelMode.customer && customerIntelStatus === 'success') ||
+    (intelMode.distributor && distributorIntelStatus === 'success')
+
   // Navigate to dashboard
   const handleViewDashboard = () => {
     // If only intelligence data was processed (no market data in this session),
     // clear any existing market data from the store to show intelligence-only view
-    if (marketStatus !== 'success' && intelligenceStatus === 'success') {
+    if (marketStatus !== 'success' && hadIntelligenceUploadSuccess) {
       console.log('Clearing market data for intelligence-only view')
       clearData() // This clears market data but keeps intelligence data
     }
     router.push('/')
   }
+
+  const renderIntelStatusBlock = (
+    status: 'idle' | 'processing' | 'success' | 'error',
+    message: string
+  ) =>
+    message ? (
+      <div
+        className={`p-4 rounded-md flex items-start gap-3 ${
+          status === 'success'
+            ? 'bg-green-50 border border-green-200'
+            : status === 'error'
+              ? 'bg-red-50 border border-red-200'
+              : 'bg-yellow-50 border border-yellow-200'
+        }`}
+      >
+        {status === 'success' ? (
+          <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+        ) : status === 'error' ? (
+          <XCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+        ) : (
+          <Loader2 className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5 animate-spin" />
+        )}
+        <p
+          className={`text-sm whitespace-pre-wrap ${
+            status === 'success' ? 'text-green-800' : status === 'error' ? 'text-red-800' : 'text-yellow-800'
+          }`}
+        >
+          {message}
+        </p>
+      </div>
+    ) : null
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -813,17 +865,6 @@ export default function DashboardBuilderPage() {
                 2. Customer/Distributor Intelligence
               </button>
               <button
-                onClick={() => setActiveTab('competitive')}
-                className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 text-sm font-medium transition-colors ${
-                  activeTab === 'competitive'
-                    ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                }`}
-              >
-                <TrendingUp className="w-5 h-5" />
-                3. Competitive Intelligence
-              </button>
-              <button
                 onClick={() => setActiveTab('pricing')}
                 className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 text-sm font-medium transition-colors ${
                   activeTab === 'pricing'
@@ -832,7 +873,7 @@ export default function DashboardBuilderPage() {
                 }`}
               >
                 <DollarSign className="w-5 h-5" />
-                4. Pricing Analysis
+                3. Pricing Analysis
               </button>
             </div>
           </div>
@@ -964,6 +1005,54 @@ export default function DashboardBuilderPage() {
                 <label className="block text-sm font-medium text-black mb-2">
                   Volume File (Optional)
                 </label>
+                <div className="mb-3">
+                  <span className="block text-sm font-medium text-black mb-2">Volume units</span>
+                  <div className="grid grid-cols-2 gap-4 sm:flex sm:flex-wrap sm:gap-6">
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input
+                        type="radio"
+                        name="volumeUnit"
+                        className="h-4 w-4 border-gray-300 text-teal-600 focus:ring-teal-500"
+                        checked={volumeUnitInput === 'million-units'}
+                        onChange={() => setVolumeUnitInput('million-units')}
+                      />
+                      <span className="text-sm text-black">Million units</span>
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input
+                        type="radio"
+                        name="volumeUnit"
+                        className="h-4 w-4 border-gray-300 text-teal-600 focus:ring-teal-500"
+                        checked={volumeUnitInput === 'units'}
+                        onChange={() => setVolumeUnitInput('units')}
+                      />
+                      <span className="text-sm text-black">Units</span>
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input
+                        type="radio"
+                        name="volumeUnit"
+                        className="h-4 w-4 border-gray-300 text-teal-600 focus:ring-teal-500"
+                        checked={volumeUnitInput === 'th-units'}
+                        onChange={() => setVolumeUnitInput('th-units')}
+                      />
+                      <span className="text-sm text-black">Th units</span>
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input
+                        type="radio"
+                        name="volumeUnit"
+                        className="h-4 w-4 border-gray-300 text-teal-600 focus:ring-teal-500"
+                        checked={volumeUnitInput === 'tons'}
+                        onChange={() => setVolumeUnitInput('tons')}
+                      />
+                      <span className="text-sm text-black">Tons</span>
+                    </label>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Select how volume figures in your file should be labeled on charts and KPIs
+                  </p>
+                </div>
                 <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-gray-400 transition-colors">
                   <div className="space-y-1 text-center">
                     <FileSpreadsheet className="mx-auto h-12 w-12 text-gray-400" />
@@ -988,6 +1077,82 @@ export default function DashboardBuilderPage() {
                     {volumeFile && (
                       <p className="text-sm text-green-600 mt-2">
                         ✓ {volumeFile.name} ({(volumeFile.size / 1024 / 1024).toFixed(2)} MB)
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Cross Value File Upload */}
+              <div>
+                <label className="block text-sm font-medium text-black mb-1">
+                  Cross Value File <span className="text-gray-400 font-normal">(Optional)</span>
+                </label>
+                <p className="text-xs text-gray-500 mb-2">
+                  CSV/Excel with columns: Region, Segment, Sub-segment, Sub-segment 1, [years…] — adds a cross-tabulated segment to the dashboard.
+                </p>
+                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-gray-400 transition-colors">
+                  <div className="space-y-1 text-center">
+                    <FileSpreadsheet className="mx-auto h-12 w-12 text-gray-400" />
+                    <div className="flex text-sm text-gray-600">
+                      <label
+                        htmlFor="crossValueFile"
+                        className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+                      >
+                        <span>Upload a file</span>
+                        <input
+                          id="crossValueFile"
+                          name="crossValueFile"
+                          type="file"
+                          accept=".csv,.xlsx,.xls"
+                          className="sr-only"
+                          onChange={handleCrossValueFileChange}
+                        />
+                      </label>
+                      <p className="pl-1">or drag and drop</p>
+                    </div>
+                    <p className="text-xs text-gray-500">CSV, XLSX, or XLS up to 50MB</p>
+                    {crossValueFile && (
+                      <p className="text-sm text-green-600 mt-2">
+                        ✓ {crossValueFile.name} ({(crossValueFile.size / 1024 / 1024).toFixed(2)} MB)
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Cross Volume File Upload */}
+              <div>
+                <label className="block text-sm font-medium text-black mb-1">
+                  Cross Volume File <span className="text-gray-400 font-normal">(Optional)</span>
+                </label>
+                <p className="text-xs text-gray-500 mb-2">
+                  Same format as Cross Value but for volume data.
+                </p>
+                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-gray-400 transition-colors">
+                  <div className="space-y-1 text-center">
+                    <FileSpreadsheet className="mx-auto h-12 w-12 text-gray-400" />
+                    <div className="flex text-sm text-gray-600">
+                      <label
+                        htmlFor="crossVolumeFile"
+                        className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+                      >
+                        <span>Upload a file</span>
+                        <input
+                          id="crossVolumeFile"
+                          name="crossVolumeFile"
+                          type="file"
+                          accept=".csv,.xlsx,.xls"
+                          className="sr-only"
+                          onChange={handleCrossVolumeFileChange}
+                        />
+                      </label>
+                      <p className="pl-1">or drag and drop</p>
+                    </div>
+                    <p className="text-xs text-gray-500">CSV, XLSX, or XLS up to 50MB</p>
+                    {crossVolumeFile && (
+                      <p className="text-sm text-green-600 mt-2">
+                        ✓ {crossVolumeFile.name} ({(crossVolumeFile.size / 1024 / 1024).toFixed(2)} MB)
                       </p>
                     )}
                   </div>
@@ -1055,320 +1220,173 @@ export default function DashboardBuilderPage() {
               <p className="text-sm text-gray-600">Add customer or distributor intelligence data to your dashboard</p>
             </div>
 
-            <IntelligenceDataInput
-              intelligenceType={intelligenceType}
-              onTypeChange={(type) => {
-                setLocalIntelligenceType(type)
-                setIntelligenceType(type)
-              }}
-              onDataSave={handleIntelligenceDataSave}
-              onAutoSave={handleIntelligenceAutoSave}
-            />
+            <IntelligenceDataInput mode={intelMode} onModeChange={setIntelMode} />
 
-            {/* File Upload Option */}
-            <div className="mt-6 pt-6 border-t border-gray-200">
-              <h3 className="text-sm font-semibold text-black mb-4">Or Upload Excel Files</h3>
-              <div className="space-y-4">
-                {/* Proposition 1 */}
-                <div>
-                  <label className="block text-sm font-medium text-black mb-2">
-                    Proposition 1 (Basic) <span className="text-red-500">*</span>
-                  </label>
-                  <div
-                    className={`mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-md transition-colors ${
-                      isDraggingIntelligence
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-300 hover:border-gray-400'
-                    }`}
-                    onDrop={handleIntelligenceDrop}
-                    onDragOver={handleDragOver}
-                    onDragEnter={(e) => handleDragEnter(e, setIsDraggingIntelligence)}
-                    onDragLeave={(e) => handleDragLeave(e, setIsDraggingIntelligence)}
-                  >
-                    <div className="space-y-1 text-center">
-                      <FileSpreadsheet className={`mx-auto h-12 w-12 ${isDraggingIntelligence ? 'text-blue-500' : 'text-gray-400'}`} />
-                      <div className="flex text-sm text-gray-600">
-                        <label
-                          htmlFor="intelligenceFile"
-                          className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
-                        >
-                          <span>Upload a file</span>
-                          <input
-                            id="intelligenceFile"
-                            name="intelligenceFile"
-                            type="file"
-                            accept=".csv,.xlsx,.xls"
-                            className="sr-only"
-                            onChange={handleIntelligenceFileChange}
-                          />
-                        </label>
-                        <p className="pl-1">or drag and drop</p>
-                      </div>
-                      <p className="text-xs text-gray-500">CSV, XLSX, or XLS up to 50MB</p>
-                      {isDraggingIntelligence && (
-                        <p className="text-sm text-blue-600 mt-2 font-medium">Drop file here!</p>
-                      )}
-                      {intelligenceFile && !isDraggingIntelligence && (
-                        <p className="text-sm text-green-600 mt-2">
-                          {intelligenceFileData ? '✓' : '⏳'} {intelligenceFile.name} ({(intelligenceFile.size / 1024 / 1024).toFixed(2)} MB)
-                          {intelligenceFileData && <span className="text-green-700 ml-1">(Ready)</span>}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Proposition 2 */}
-                <div>
-                  <label className="block text-sm font-medium text-black mb-2">
-                    Proposition 2 (Advance) (Optional)
-                  </label>
-                  <div
-                    className={`mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-md transition-colors ${
-                      isDraggingProp2
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-300 hover:border-gray-400'
-                    }`}
-                    onDrop={handleProp2Drop}
-                    onDragOver={handleDragOver}
-                    onDragEnter={(e) => handleDragEnter(e, setIsDraggingProp2)}
-                    onDragLeave={(e) => handleDragLeave(e, setIsDraggingProp2)}
-                  >
-                    <div className="space-y-1 text-center">
-                      <FileSpreadsheet className={`mx-auto h-12 w-12 ${isDraggingProp2 ? 'text-blue-500' : 'text-gray-400'}`} />
-                      <div className="flex text-sm text-gray-600">
-                        <label
-                          htmlFor="proposition2File"
-                          className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
-                        >
-                          <span>Upload a file</span>
-                          <input
-                            id="proposition2File"
-                            name="proposition2File"
-                            type="file"
-                            accept=".csv,.xlsx,.xls"
-                            className="sr-only"
-                            onChange={handleProposition2FileChange}
-                          />
-                        </label>
-                        <p className="pl-1">or drag and drop</p>
-                      </div>
-                      <p className="text-xs text-gray-500">CSV, XLSX, or XLS up to 50MB</p>
-                      {isDraggingProp2 && (
-                        <p className="text-sm text-blue-600 mt-2 font-medium">Drop file here!</p>
-                      )}
-                      {proposition2File && !isDraggingProp2 && (
-                        <p className="text-sm text-green-600 mt-2">
-                          {proposition2FileData ? '✓' : '⏳'} {proposition2File.name} ({(proposition2File.size / 1024 / 1024).toFixed(2)} MB)
-                          {proposition2FileData && <span className="text-green-700 ml-1">(Ready)</span>}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Proposition 3 */}
-                <div>
-                  <label className="block text-sm font-medium text-black mb-2">
-                    Proposition 3 (Premium) (Optional)
-                  </label>
-                  <div
-                    className={`mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-md transition-colors ${
-                      isDraggingProp3
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-300 hover:border-gray-400'
-                    }`}
-                    onDrop={handleProp3Drop}
-                    onDragOver={handleDragOver}
-                    onDragEnter={(e) => handleDragEnter(e, setIsDraggingProp3)}
-                    onDragLeave={(e) => handleDragLeave(e, setIsDraggingProp3)}
-                  >
-                    <div className="space-y-1 text-center">
-                      <FileSpreadsheet className={`mx-auto h-12 w-12 ${isDraggingProp3 ? 'text-blue-500' : 'text-gray-400'}`} />
-                      <div className="flex text-sm text-gray-600">
-                        <label
-                          htmlFor="proposition3File"
-                          className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
-                        >
-                          <span>Upload a file</span>
-                          <input
-                            id="proposition3File"
-                            name="proposition3File"
-                            type="file"
-                            accept=".csv,.xlsx,.xls"
-                            className="sr-only"
-                            onChange={handleProposition3FileChange}
-                          />
-                        </label>
-                        <p className="pl-1">or drag and drop</p>
-                      </div>
-                      <p className="text-xs text-gray-500">CSV, XLSX, or XLS up to 50MB</p>
-                      {isDraggingProp3 && (
-                        <p className="text-sm text-blue-600 mt-2 font-medium">Drop file here!</p>
-                      )}
-                      {proposition3File && !isDraggingProp3 && (
-                        <p className="text-sm text-green-600 mt-2">
-                          {proposition3FileData ? '✓' : '⏳'} {proposition3File.name} ({(proposition3File.size / 1024 / 1024).toFixed(2)} MB)
-                          {proposition3FileData && <span className="text-green-700 ml-1">(Ready)</span>}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Status Message */}
-                {intelligenceStatusMessage && (
-                  <div
-                    className={`p-4 rounded-md flex items-start gap-3 ${
-                      intelligenceStatus === 'success'
-                        ? 'bg-green-50 border border-green-200'
-                        : intelligenceStatus === 'error'
-                        ? 'bg-red-50 border border-red-200'
-                        : 'bg-yellow-50 border border-yellow-200'
-                    }`}
-                  >
-                    {intelligenceStatus === 'success' ? (
-                      <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
-                    ) : intelligenceStatus === 'error' ? (
-                      <XCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-                    ) : (
-                      <Loader2 className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5 animate-spin" />
-                    )}
-                    <p
-                      className={`text-sm ${
-                        intelligenceStatus === 'success'
-                          ? 'text-green-800'
-                          : intelligenceStatus === 'error'
-                          ? 'text-red-800'
-                          : 'text-yellow-800'
-                      }`}
-                    >
-                      {intelligenceStatusMessage}
-                    </p>
-                  </div>
-                )}
-
-                {/* Process Button */}
-                <button
-                  onClick={handleProcessIntelligenceFile}
-                  disabled={!intelligenceFile || isProcessingIntelligence}
-                  className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
-                >
-                  {isProcessingIntelligence ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="w-5 h-5" />
-                      Process Intelligence Data
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-          )}
-
-          {activeTab === 'competitive' && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold text-black mb-2">3. Competitive Intelligence</h2>
-              <p className="text-sm text-gray-600">Upload competitive intelligence CSV file to display in the competitive intelligence section</p>
-            </div>
-
-            <div className="space-y-6">
-              {/* Competitive Intelligence File Upload */}
+            <div className="mt-6 pt-6 border-t border-gray-200 space-y-8">
               <div>
-                <label className="block text-sm font-medium text-black mb-2">
-                  Competitive Intelligence File <span className="text-red-500">*</span>
-                </label>
-                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-gray-400 transition-colors">
-                  <div className="space-y-1 text-center">
-                    <FileSpreadsheet className="mx-auto h-12 w-12 text-gray-400" />
-                    <div className="flex text-sm text-gray-600">
-                      <label
-                        htmlFor="competitiveFile"
-                        className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
-                      >
-                        <span>Upload a file</span>
-                        <input
-                          id="competitiveFile"
-                          name="competitiveFile"
-                          type="file"
-                          accept=".csv,.xlsx,.xls"
-                          className="sr-only"
-                          onChange={handleCompetitiveFileChange}
-                        />
-                      </label>
-                      <p className="pl-1">or drag and drop</p>
-                    </div>
-                    <p className="text-xs text-gray-500">CSV, XLSX, or XLS up to 50MB</p>
-                    {competitiveFile && (
-                      <p className="text-sm text-green-600 mt-2">
-                        ✓ {competitiveFile.name} ({(competitiveFile.size / 1024 / 1024).toFixed(2)} MB)
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                  <p className="text-xs text-blue-800">
-                    <strong>Expected CSV Format:</strong> The CSV should include columns like Company ID, Company Name, Headquarters, CEO, Year Established, Product/Service Portfolio, Strategies, Regional Strength, Overall Revenue, Segmental Revenue, Market Share, and Proposition fields (Proposition 1 Title, Proposition 1 Description, Proposition 1 Category, etc.)
-                  </p>
-                </div>
+                <h3 className="text-sm font-semibold text-black mb-2">Upload intelligence workbooks</h3>
+                <p className="text-xs text-gray-600 mb-4">
+                  Each workbook may include three worksheets whose names contain{' '}
+                  <span className="font-medium text-gray-800">Proposition 1</span>,{' '}
+                  <span className="font-medium text-gray-800">Proposition 2</span>, and{' '}
+                  <span className="font-medium text-gray-800">Proposition 3</span>. Basic, Advance, and Premium tables
+                  map to those sheets. CSV or single-sheet Excel files use the first sheet as Proposition 1. When{' '}
+                  <strong>both</strong> customer and distributor are enabled, upload <strong>two separate files</strong>{' '}
+                  and process each one so parsers apply the correct column rules.
+                </p>
               </div>
 
-              {/* Status Message */}
-              {competitiveStatusMessage && (
-                <div
-                  className={`p-4 rounded-md flex items-start gap-3 ${
-                    competitiveStatus === 'success'
-                      ? 'bg-green-50 border border-green-200'
-                      : competitiveStatus === 'error'
-                      ? 'bg-red-50 border border-red-200'
-                      : 'bg-yellow-50 border border-yellow-200'
-                  }`}
-                >
-                  {competitiveStatus === 'success' ? (
-                    <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
-                  ) : competitiveStatus === 'error' ? (
-                    <XCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-                  ) : (
-                    <Loader2 className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5 animate-spin" />
-                  )}
-                  <p
-                    className={`text-sm ${
-                      competitiveStatus === 'success'
-                        ? 'text-green-800'
-                        : competitiveStatus === 'error'
-                        ? 'text-red-800'
-                        : 'text-yellow-800'
+              {intelMode.customer && (
+                <div className="space-y-4 rounded-lg border border-gray-100 bg-gray-50/50 p-4">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-gray-600" />
+                    <h4 className="text-sm font-semibold text-black">Customer intelligence workbook</h4>
+                  </div>
+                  <label className="block text-sm font-medium text-black mb-2">
+                    Customer workbook <span className="text-red-500">*</span>
+                  </label>
+                  <div
+                    className={`mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-md transition-colors ${
+                      isDraggingCustomerIntel
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-300 hover:border-gray-400'
                     }`}
+                    onDrop={handleCustomerIntelDrop}
+                    onDragOver={handleDragOver}
+                    onDragEnter={(e) => handleDragEnter(e, setIsDraggingCustomerIntel)}
+                    onDragLeave={(e) => handleDragLeave(e, setIsDraggingCustomerIntel)}
                   >
-                    {competitiveStatusMessage}
-                  </p>
+                    <div className="space-y-1 text-center">
+                      <FileSpreadsheet
+                        className={`mx-auto h-12 w-12 ${isDraggingCustomerIntel ? 'text-blue-500' : 'text-gray-400'}`}
+                      />
+                      <div className="flex text-sm text-gray-600">
+                        <label
+                          htmlFor="customerIntelFile"
+                          className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+                        >
+                          <span>Upload a file</span>
+                          <input
+                            id="customerIntelFile"
+                            name="customerIntelFile"
+                            type="file"
+                            accept=".csv,.xlsx,.xls"
+                            className="sr-only"
+                            onChange={handleCustomerIntelFileChange}
+                          />
+                        </label>
+                        <p className="pl-1">or drag and drop</p>
+                      </div>
+                      <p className="text-xs text-gray-500">CSV, XLSX, or XLS up to 50MB</p>
+                      {isDraggingCustomerIntel && (
+                        <p className="text-sm text-blue-600 mt-2 font-medium">Drop file here!</p>
+                      )}
+                      {customerIntelFile && !isDraggingCustomerIntel && (
+                        <p className="text-sm text-green-600 mt-2">
+                          {customerIntelFileData ? '✓' : '⏳'} {customerIntelFile.name} (
+                          {(customerIntelFile.size / 1024 / 1024).toFixed(2)} MB)
+                          {customerIntelFileData && <span className="text-green-700 ml-1">(Ready)</span>}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {renderIntelStatusBlock(customerIntelStatus, customerIntelStatusMessage)}
+                  <button
+                    type="button"
+                    onClick={() => handleProcessIntelligenceForTarget('customer')}
+                    disabled={!customerIntelFileData || intelProcessing !== null}
+                    className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
+                  >
+                    {intelProcessing === 'customer' ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-5 h-5" />
+                        Process Customer Intelligence Data
+                      </>
+                    )}
+                  </button>
                 </div>
               )}
 
-              {/* Process Button */}
-              <button
-                onClick={handleProcessCompetitiveIntelligence}
-                disabled={!competitiveFile || isProcessingCompetitive}
-                className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
-              >
-                {isProcessingCompetitive ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="w-5 h-5" />
-                    Process Competitive Intelligence Data
-                  </>
-                )}
-              </button>
+              {intelMode.distributor && (
+                <div className="space-y-4 rounded-lg border border-gray-100 bg-gray-50/50 p-4">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-5 w-5 text-gray-600" />
+                    <h4 className="text-sm font-semibold text-black">Distributor intelligence workbook</h4>
+                  </div>
+                  <label className="block text-sm font-medium text-black mb-2">
+                    Distributor workbook <span className="text-red-500">*</span>
+                  </label>
+                  <div
+                    className={`mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-md transition-colors ${
+                      isDraggingDistributorIntel
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-300 hover:border-gray-400'
+                    }`}
+                    onDrop={handleDistributorIntelDrop}
+                    onDragOver={handleDragOver}
+                    onDragEnter={(e) => handleDragEnter(e, setIsDraggingDistributorIntel)}
+                    onDragLeave={(e) => handleDragLeave(e, setIsDraggingDistributorIntel)}
+                  >
+                    <div className="space-y-1 text-center">
+                      <FileSpreadsheet
+                        className={`mx-auto h-12 w-12 ${isDraggingDistributorIntel ? 'text-blue-500' : 'text-gray-400'}`}
+                      />
+                      <div className="flex text-sm text-gray-600">
+                        <label
+                          htmlFor="distributorIntelFile"
+                          className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+                        >
+                          <span>Upload a file</span>
+                          <input
+                            id="distributorIntelFile"
+                            name="distributorIntelFile"
+                            type="file"
+                            accept=".csv,.xlsx,.xls"
+                            className="sr-only"
+                            onChange={handleDistributorIntelFileChange}
+                          />
+                        </label>
+                        <p className="pl-1">or drag and drop</p>
+                      </div>
+                      <p className="text-xs text-gray-500">CSV, XLSX, or XLS up to 50MB</p>
+                      {isDraggingDistributorIntel && (
+                        <p className="text-sm text-blue-600 mt-2 font-medium">Drop file here!</p>
+                      )}
+                      {distributorIntelFile && !isDraggingDistributorIntel && (
+                        <p className="text-sm text-green-600 mt-2">
+                          {distributorIntelFileData ? '✓' : '⏳'} {distributorIntelFile.name} (
+                          {(distributorIntelFile.size / 1024 / 1024).toFixed(2)} MB)
+                          {distributorIntelFileData && <span className="text-green-700 ml-1">(Ready)</span>}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {renderIntelStatusBlock(distributorIntelStatus, distributorIntelStatusMessage)}
+                  <button
+                    type="button"
+                    onClick={() => handleProcessIntelligenceForTarget('distributor')}
+                    disabled={!distributorIntelFileData || intelProcessing !== null}
+                    className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
+                  >
+                    {intelProcessing === 'distributor' ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-5 h-5" />
+                        Process Distributor Intelligence Data
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
           )}
@@ -1376,7 +1394,7 @@ export default function DashboardBuilderPage() {
           {activeTab === 'pricing' && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
             <div className="mb-6">
-              <h2 className="text-2xl font-bold text-black mb-2">4. Pricing Analysis</h2>
+              <h2 className="text-2xl font-bold text-black mb-2">3. Pricing Analysis</h2>
               <p className="text-sm text-gray-600">Upload pricing analysis CSV/Excel file to display average selling price trends and analysis</p>
             </div>
 
@@ -1483,8 +1501,9 @@ export default function DashboardBuilderPage() {
         </div>
 
         {/* View Dashboard Button - Shows when any data is processed */}
-        {(marketStatus === 'success' || intelligenceStatus === 'success' || pricingStatus === 'success') && (
-          <div className="mt-6">
+        {(marketStatus === 'success' || hadIntelligenceUploadSuccess || pricingStatus === 'success') && (
+          <div className="mt-6 space-y-4">
+            {/* View Dashboard */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -1492,7 +1511,7 @@ export default function DashboardBuilderPage() {
                   <p className="text-sm text-blue-800">
                     {[
                       marketStatus === 'success' && 'Market',
-                      intelligenceStatus === 'success' && 'Intelligence',
+                      hadIntelligenceUploadSuccess && 'Intelligence',
                       pricingStatus === 'success' && 'Pricing'
                     ].filter(Boolean).join(', ')} data processed. Click to view dashboard.
                   </p>
@@ -1505,6 +1524,95 @@ export default function DashboardBuilderPage() {
                   View Dashboard
                   <ArrowRight className="h-5 w-5" />
                 </button>
+              </div>
+            </div>
+
+            {/* Generate Shareable Link */}
+            <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <h3 className="text-sm font-semibold text-green-900 mb-1 flex items-center gap-2">
+                    <svg className="h-4 w-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                    </svg>
+                    Generate Shareable Link
+                  </h3>
+                  <p className="text-sm text-green-800 mb-3">
+                    Create a permanent link to share this dashboard with your client. The link works on any browser and never expires.
+                  </p>
+
+                  {shareLinkError && (
+                    <div className="flex items-start gap-2 p-2.5 mb-3 bg-red-50 border border-red-200 rounded-md">
+                      <svg className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className="text-xs text-red-700">{shareLinkError}</p>
+                    </div>
+                  )}
+
+                  {shareUrl ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={shareUrl}
+                        className="flex-1 px-3 py-2 text-sm bg-white border border-green-300 rounded-md font-mono text-gray-700 select-all"
+                        onClick={e => (e.target as HTMLInputElement).select()}
+                      />
+                      <button
+                        onClick={handleCopyLink}
+                        className={`flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                          linkCopied
+                            ? 'bg-green-600 text-white'
+                            : 'bg-white border border-green-400 text-green-700 hover:bg-green-100'
+                        }`}
+                      >
+                        {linkCopied ? (
+                          <>
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Copied!
+                          </>
+                        ) : (
+                          <>
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            Copy Link
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => { setShareUrl(null); setLinkCopied(false); setShareLinkError(null) }}
+                        className="px-3 py-2 text-sm text-green-700 hover:text-green-900 border border-green-300 rounded-md hover:bg-green-100 transition-colors"
+                        title="Generate a new link"
+                      >
+                        New Link
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleGenerateLink}
+                      disabled={isGeneratingLink}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium text-sm"
+                    >
+                      {isGeneratingLink ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Saving Dashboard…
+                        </>
+                      ) : (
+                        <>
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                          </svg>
+                          Generate Shareable Link
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
