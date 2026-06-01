@@ -11,7 +11,7 @@
  * reads to the correct cache bucket (see lib/slave-cache.ts).
  */
 
-import clientPromise from './mongodb'
+import { getMongoClient } from './mongodb'
 import { PARTITION_COUNT } from './slave-cache'
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -32,7 +32,7 @@ export interface PartitionLoad {
  */
 export async function assignPartition(): Promise<number> {
   try {
-    const client = await clientPromise
+    const client = await getMongoClient()
     const col = client.db('DBbuilder').collection('Builder')
 
     // Aggregate count per partitionKey in a single round-trip
@@ -71,7 +71,7 @@ export async function assignPartition(): Promise<number> {
  */
 export async function getPartitionLoads(): Promise<PartitionLoad[]> {
   try {
-    const client = await clientPromise
+    const client = await getMongoClient()
     const col = client.db('DBbuilder').collection('Builder')
 
     const counts: { _id: number; count: number }[] = await col

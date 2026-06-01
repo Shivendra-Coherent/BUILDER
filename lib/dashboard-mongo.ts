@@ -9,7 +9,7 @@
  * single-field lookups without a secondary index).
  */
 
-import clientPromise from './mongodb'
+import { getMongoClient } from './mongodb'
 import type { ComparisonData } from './types'
 import type { IntelligenceSheetData } from './intelligence-sheet-types'
 
@@ -57,7 +57,7 @@ export function isValidDashboardId(id: unknown): id is string {
 }
 
 async function getCollection() {
-  const client = await clientPromise
+  const client = await getMongoClient()
   return client.db('DBbuilder').collection<DashboardDocument>('Builder')
 }
 
