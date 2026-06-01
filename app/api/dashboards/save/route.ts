@@ -3,6 +3,7 @@ import { upsertDashboard, getDashboard, isValidDashboardId } from '@/lib/dashboa
 import { assignPartition } from '@/lib/partition'
 import { cacheSet, cacheInvalidate } from '@/lib/slave-cache'
 import { getPublicAppOrigin } from '@/lib/app-origin'
+import { parseIntelligenceSheet } from '@/lib/intelligence-sheet-types'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,12 +45,12 @@ export async function POST(request: NextRequest) {
       partitionKey,
       data:                           (body.data as any)                           ?? null,
       intelligenceType:               (body.intelligenceType as any)               ?? null,
-      rawIntelligenceData:            body.rawIntelligenceData                     ?? null,
-      proposition2Data:               body.proposition2Data                        ?? null,
-      proposition3Data:               body.proposition3Data                        ?? null,
-      distributorRawIntelligenceData: body.distributorRawIntelligenceData          ?? null,
-      distributorProposition2Data:    body.distributorProposition2Data             ?? null,
-      distributorProposition3Data:    body.distributorProposition3Data             ?? null,
+      rawIntelligenceData:            parseIntelligenceSheet(body.rawIntelligenceData),
+      proposition2Data:               parseIntelligenceSheet(body.proposition2Data),
+      proposition3Data:               parseIntelligenceSheet(body.proposition3Data),
+      distributorRawIntelligenceData: parseIntelligenceSheet(body.distributorRawIntelligenceData),
+      distributorProposition2Data:    parseIntelligenceSheet(body.distributorProposition2Data),
+      distributorProposition3Data:    parseIntelligenceSheet(body.distributorProposition3Data),
       pricingAnalysisData:            body.pricingAnalysisData                     ?? null,
       showDemoNote:                   body.showDemoNote === true,
     }

@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { useDashboardStore } from '@/lib/store'
 import { DashboardShell } from '@/components/DashboardShell'
 import type { DashboardDocument } from '@/lib/dashboard-mongo'
+import { parseIntelligenceSheet } from '@/lib/intelligence-sheet-types'
 
 export default function SharedDashboardPage() {
   const params = useParams()
@@ -57,12 +58,18 @@ export default function SharedDashboardPage() {
         setDashboardName(snapshot.name || null)
         setCurrency(snapshot.currency || 'USD')
         if (snapshot.intelligenceType) setIntelligenceType(snapshot.intelligenceType)
-        if (snapshot.rawIntelligenceData) setRawIntelligenceData(snapshot.rawIntelligenceData)
-        if (snapshot.proposition2Data) setProposition2Data(snapshot.proposition2Data)
-        if (snapshot.proposition3Data) setProposition3Data(snapshot.proposition3Data)
-        if (snapshot.distributorRawIntelligenceData) setDistributorRawIntelligenceData(snapshot.distributorRawIntelligenceData)
-        if (snapshot.distributorProposition2Data) setDistributorProposition2Data(snapshot.distributorProposition2Data)
-        if (snapshot.distributorProposition3Data) setDistributorProposition3Data(snapshot.distributorProposition3Data)
+        const rawIntel = parseIntelligenceSheet(snapshot.rawIntelligenceData)
+        if (rawIntel) setRawIntelligenceData(rawIntel)
+        const prop2 = parseIntelligenceSheet(snapshot.proposition2Data)
+        if (prop2) setProposition2Data(prop2)
+        const prop3 = parseIntelligenceSheet(snapshot.proposition3Data)
+        if (prop3) setProposition3Data(prop3)
+        const distRaw = parseIntelligenceSheet(snapshot.distributorRawIntelligenceData)
+        if (distRaw) setDistributorRawIntelligenceData(distRaw)
+        const distProp2 = parseIntelligenceSheet(snapshot.distributorProposition2Data)
+        if (distProp2) setDistributorProposition2Data(distProp2)
+        const distProp3 = parseIntelligenceSheet(snapshot.distributorProposition3Data)
+        if (distProp3) setDistributorProposition3Data(distProp3)
         if (snapshot.pricingAnalysisData) setPricingAnalysisData(snapshot.pricingAnalysisData)
         setShowDemoNote(snapshot.showDemoNote || false)
 

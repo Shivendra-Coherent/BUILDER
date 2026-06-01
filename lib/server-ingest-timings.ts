@@ -26,11 +26,13 @@ export function createStageTimer() {
     return ms
   }
 
-  function done(extra?: Record<string, number | undefined>) {
+  function done<T extends Record<string, number | undefined> = Record<string, never>>(
+    extra?: T
+  ): { stages: Record<string, number>; totalMs: number } & T {
     return {
       stages: { ...stages },
       totalMs: Math.round(performance.now() - t0),
-      ...(extra ?? {}),
+      ...(extra ?? ({} as T)),
     }
   }
 

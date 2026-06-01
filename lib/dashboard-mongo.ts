@@ -11,6 +11,9 @@
 
 import clientPromise from './mongodb'
 import type { ComparisonData } from './types'
+import type { IntelligenceSheetData } from './intelligence-sheet-types'
+
+export type { IntelligenceSheetData } from './intelligence-sheet-types'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,12 +31,12 @@ export interface DashboardDocument {
   /** Core market data (value / volume) */
   data: ComparisonData | null
   intelligenceType: 'customer' | 'distributor' | 'both' | null
-  rawIntelligenceData: unknown
-  proposition2Data: unknown
-  proposition3Data: unknown
-  distributorRawIntelligenceData: unknown
-  distributorProposition2Data: unknown
-  distributorProposition3Data: unknown
+  rawIntelligenceData: IntelligenceSheetData | null
+  proposition2Data: IntelligenceSheetData | null
+  proposition3Data: IntelligenceSheetData | null
+  distributorRawIntelligenceData: IntelligenceSheetData | null
+  distributorProposition2Data: IntelligenceSheetData | null
+  distributorProposition3Data: IntelligenceSheetData | null
   pricingAnalysisData: unknown
   showDemoNote: boolean
 }
