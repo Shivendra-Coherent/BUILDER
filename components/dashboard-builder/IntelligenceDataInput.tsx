@@ -47,11 +47,13 @@ export function IntelligenceDataInput({ mode, onModeChange }: IntelligenceDataIn
 
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <label className="mb-4 block text-sm font-medium text-black">Intelligence types to include</label>
-        <p className="mb-3 text-xs text-gray-600">
-          Select one or both. Upload your workbook below for each type you enable (customer and distributor each use
-          their own file when both are selected).
+      <div className="builder-panel-nested">
+        <label className="mb-4 block text-sm font-medium text-slate-200">
+          Intelligence types to include
+        </label>
+        <p className="mb-3 text-xs text-slate-400">
+          Select one or both. Upload your workbook below for each type you enable (customer and
+          distributor each use their own file when both are selected).
         </p>
         <div className="flex flex-wrap gap-6">
           <label className="flex cursor-pointer items-center gap-2">
@@ -59,20 +61,20 @@ export function IntelligenceDataInput({ mode, onModeChange }: IntelligenceDataIn
               type="checkbox"
               checked={mode.customer}
               onChange={(e) => setCustomerChecked(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              className="builder-radio h-4 w-4 rounded"
             />
-            <Users className="h-5 w-5 text-gray-600" />
-            <span className="text-sm font-medium text-black">Customer Intelligence</span>
+            <Users className="h-5 w-5 text-sky-400/80" />
+            <span className="text-sm font-medium text-slate-200">Customer Intelligence</span>
           </label>
           <label className="flex cursor-pointer items-center gap-2">
             <input
               type="checkbox"
               checked={mode.distributor}
               onChange={(e) => setDistributorChecked(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              className="builder-radio h-4 w-4 rounded"
             />
-            <Building2 className="h-5 w-5 text-gray-600" />
-            <span className="text-sm font-medium text-black">Distributor Intelligence</span>
+            <Building2 className="h-5 w-5 text-violet-400/80" />
+            <span className="text-sm font-medium text-slate-200">Distributor Intelligence</span>
           </label>
         </div>
       </div>

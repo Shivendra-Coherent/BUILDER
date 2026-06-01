@@ -25,6 +25,7 @@ export function DashboardBuilderDownload() {
     distributorProposition3Data,
     pricingAnalysisData,
     showDemoNote,
+    dashboardId,
     fromDashboardBuilder,
     dashboardBuilderFiles,
   } = useDashboardStore()
@@ -52,6 +53,7 @@ export function DashboardBuilderDownload() {
       const payload = {
         name: dashboardName || 'Untitled Dashboard',
         currency: currency || 'USD',
+        dashboardId: dashboardId ?? undefined, // pass so the API can upsert the existing doc
         data: data ?? null,
         intelligenceType: intelligenceType ?? null,
         rawIntelligenceData: rawIntelligenceData ?? null,

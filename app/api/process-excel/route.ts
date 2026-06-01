@@ -6,6 +6,9 @@ import {
   ingestTimingsExposed,
   logIngestTimings,
 } from '@/lib/server-ingest-timings'
+import { createDashboard } from '@/lib/dashboard-mongo'
+import { assignPartition } from '@/lib/partition'
+import { cacheSet } from '@/lib/slave-cache'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { writeFile } from 'fs/promises'
@@ -585,9 +588,64 @@ export async function POST(request: NextRequest) {
       volumeBytes: timingResult.volumeBytes,
     })
 
+    // ── Master: assign partition + save to MongoDB + pre-warm slave cache ────
+    // This is the MASTER write path. A failure here is non-fatal — the
+    // dashboard still loads in the browser, the user just won't have a
+    // shareable link yet.
+    let _dashboardId: string | undefined
+    try {
+      // 1. Master picks the least-loaded partition (even load distribution)
+      const partitionKey = await assignPartition()
+
+      // 2. Master saves to MongoDB with the assigned partition
+      _dashboardId = await createDashboard({
+        name: 'Untitled Dashboard',
+        currency: 'USD',
+        partitionKey,
+        data: comparisonData,
+        intelligenceType: null,
+        rawIntelligenceData: null,
+        proposition2Data: null,
+        proposition3Data: null,
+        distributorRawIntelligenceData: null,
+        distributorProposition2Data: null,
+        distributorProposition3Data: null,
+        pricingAnalysisData: null,
+        showDemoNote: false,
+      })
+
+      // 3. Master pre-warms the slave cache for this partition so the first
+      //    client who opens the shared link gets a cache hit, not a DB round-trip
+      cacheSet(_dashboardId, partitionKey, {
+        _id: _dashboardId,
+        name: 'Untitled Dashboard',
+        currency: 'USD',
+        partitionKey,
+        readCount: 0,
+        data: comparisonData,
+        intelligenceType: null,
+        rawIntelligenceData: null,
+        proposition2Data: null,
+        proposition3Data: null,
+        distributorRawIntelligenceData: null,
+        distributorProposition2Data: null,
+        distributorProposition3Data: null,
+        pricingAnalysisData: null,
+        showDemoNote: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+
+      console.log(`[process-excel] Saved to MongoDB (partition ${partitionKey}): ${_dashboardId}`)
+    } catch (mongoErr) {
+      console.error('[process-excel] MongoDB save failed (non-fatal):', mongoErr)
+    }
+    // ── End master write path ─────────────────────────────────────────────────
+
     if (ingestTimingsExposed()) {
       return NextResponse.json({
         ...comparisonData,
+        _dashboardId,
         _ingestMetrics: {
           ...timingResult.stages,
           totalMs: timingResult.totalMs,
@@ -597,7 +655,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    return NextResponse.json(comparisonData)
+    return NextResponse.json({ ...comparisonData, _dashboardId })
   } catch (error) {
     console.error('Error processing Excel/CSV files:', error)
     

@@ -106,7 +106,26 @@ export function CompactFilterPanel() {
   } else {
     availableSegments = segmentDimension?.items || []
   }
-  
+
+  // ── Filter to only segments that have actual data in the selected data type ──
+  if (availableSegments.length > 0) {
+    const matrix =
+      filters.dataType === 'volume'
+        ? data.data.volume.geography_segment_matrix
+        : data.data.value.geography_segment_matrix
+
+    if (matrix.length > 0) {
+      const segmentsWithData = new Set(
+        matrix
+          .filter(r => r.segment_type === selectedSegmentType)
+          .map(r => r.segment)
+      )
+      if (segmentsWithData.size > 0) {
+        availableSegments = availableSegments.filter(s => segmentsWithData.has(s))
+      }
+    }
+  }
+
   const segmentTypes = Object.keys(data.dimensions.segments)
   
   // Build hierarchical options for the select
@@ -222,7 +241,12 @@ export function CompactFilterPanel() {
           <div className="flex gap-1 mt-1">
             {hasValue && (
               <button
-                onClick={() => updateFilters({ dataType: 'value' })}
+                onClick={() => {
+                  const matrix = data?.data.value.geography_segment_matrix ?? []
+                  const valid = new Set(matrix.filter(r => r.segment_type === filters.segmentType).map(r => r.segment))
+                  const segments = valid.size > 0 ? filters.segments.filter(s => valid.has(s)) : filters.segments
+                  updateFilters({ dataType: 'value', segments })
+                }}
                 className={`flex-1 px-2 py-1 text-xs rounded ${
                   filters.dataType === 'value'
                     ? 'bg-blue-600 text-white'
@@ -234,7 +258,12 @@ export function CompactFilterPanel() {
             )}
             {hasVolume && (
               <button
-                onClick={() => updateFilters({ dataType: 'volume' })}
+                onClick={() => {
+                  const matrix = data?.data.volume.geography_segment_matrix ?? []
+                  const valid = new Set(matrix.filter(r => r.segment_type === filters.segmentType).map(r => r.segment))
+                  const segments = valid.size > 0 ? filters.segments.filter(s => valid.has(s)) : filters.segments
+                  updateFilters({ dataType: 'volume', segments })
+                }}
                 className={`flex-1 px-2 py-1 text-xs rounded ${
                   filters.dataType === 'volume'
                     ? 'bg-blue-600 text-white'

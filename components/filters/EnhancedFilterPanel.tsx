@@ -148,7 +148,43 @@ export function EnhancedFilterPanel() {
       availableSegments = Array.from(allSegmentsFromHierarchy)
     }
   }
-  
+
+  // ── Filter to only segments that have actual data in the selected data type ──
+  // e.g. if the volume file has no "Software" rows, hide "Software" when Volume is active.
+  // This applies to BOTH the flat availableSegments list AND the hierarchy used by CascadeFilter.
+  let segmentsWithData: Set<string> | null = null
+  if (data) {
+    const matrix =
+      filters.dataType === 'volume'
+        ? data.data.volume.geography_segment_matrix
+        : data.data.value.geography_segment_matrix
+
+    if (matrix.length > 0) {
+      const s = new Set(
+        matrix
+          .filter(r => r.segment_type === selectedSegmentType)
+          .map(r => r.segment)
+      )
+      if (s.size > 0) segmentsWithData = s
+    }
+  }
+
+  if (segmentsWithData && availableSegments.length > 0) {
+    availableSegments = availableSegments.filter(s => segmentsWithData!.has(s))
+  }
+
+  // Also build a filtered hierarchy so CascadeFilter only shows valid options
+  const filteredHierarchy: Record<string, string[]> = segmentsWithData
+    ? Object.fromEntries(
+        Object.entries(hierarchy)
+          .filter(([key]) => segmentsWithData!.has(key))
+          .map(([key, children]) => [
+            key,
+            (children as string[]).filter(c => segmentsWithData!.has(c)),
+          ])
+      )
+    : hierarchy
+
   // Build hierarchical options for the select (only used for flat segments fallback)
   // This function is now only used when there's no hierarchy, so we don't need complex recursion
   const getHierarchicalOptions = () => {
@@ -276,7 +312,13 @@ export function EnhancedFilterPanel() {
           <div className="flex gap-1 mt-1">
             {hasValue && (
               <button
-                onClick={() => updateFilters({ dataType: 'value' })}
+                onClick={() => {
+                  const matrix = data?.data.value.geography_segment_matrix ?? []
+                  const valid = new Set(matrix.filter(r => r.segment_type === filters.segmentType).map(r => r.segment))
+                  const segments = valid.size > 0 ? filters.segments.filter(s => valid.has(s)) : filters.segments
+                  setCascadePath([])
+                  updateFilters({ dataType: 'value', segments })
+                }}
                 className={`flex-1 px-3 py-1.5 text-sm rounded ${
                   filters.dataType === 'value'
                     ? 'bg-blue-600 text-white'
@@ -288,7 +330,13 @@ export function EnhancedFilterPanel() {
             )}
             {hasVolume && (
               <button
-                onClick={() => updateFilters({ dataType: 'volume' })}
+                onClick={() => {
+                  const matrix = data?.data.volume.geography_segment_matrix ?? []
+                  const valid = new Set(matrix.filter(r => r.segment_type === filters.segmentType).map(r => r.segment))
+                  const segments = valid.size > 0 ? filters.segments.filter(s => valid.has(s)) : filters.segments
+                  setCascadePath([])
+                  updateFilters({ dataType: 'volume', segments })
+                }}
                 className={`flex-1 px-3 py-1.5 text-sm rounded ${
                   filters.dataType === 'volume'
                     ? 'bg-blue-600 text-white'
@@ -444,7 +492,7 @@ export function EnhancedFilterPanel() {
             // Hierarchical segments - use cascade filter
             <>
               <CascadeFilter
-                hierarchy={hierarchy}
+                hierarchy={filteredHierarchy}
                 selectedPath={cascadePath}
                 onSelectionChange={(path) => {
                   setCascadePath(path)

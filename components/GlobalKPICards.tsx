@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { useDashboardStore } from '@/lib/store'
 import { TrendingUp, DollarSign, Calendar, Activity } from 'lucide-react'
 import { formatIndianNumber, formatIndianNumberWithCommas, formatCurrencyValue, formatLargeNumber } from '@/lib/utils'
+import { METRICS_END_YEAR, METRICS_START_YEAR, calculateCAGRFromTimeSeries } from '@/lib/metrics-calculator'
 
 export function GlobalKPICards() {
   const { data, filters, currency } = useDashboardStore()
@@ -167,23 +168,33 @@ export function GlobalKPICards() {
     const actualStartYear = availableYears.length > 0 ? Math.min(...availableYears) : startYear
     const actualEndYear = availableYears.length > 0 ? Math.max(...availableYears) : endYear
 
-    // Calculate total market size for start and end years
+    // KPI market size uses filter year range; CAGR uses standard 2026–2033 when those years exist
+    const cagrStartYear = availableYears.includes(METRICS_START_YEAR)
+      ? METRICS_START_YEAR
+      : actualStartYear
+    const cagrEndYear = availableYears.includes(METRICS_END_YEAR)
+      ? METRICS_END_YEAR
+      : actualEndYear
+
     let marketSizeStart = 0
     let marketSizeEnd = 0
+    let marketSizeCagrStart = 0
+    let marketSizeCagrEnd = 0
 
     leafRecords.forEach(record => {
-      // Access time_series with number keys
       const startValue = record.time_series[actualStartYear] ?? 0
       const endValue = record.time_series[actualEndYear] ?? 0
       marketSizeStart += startValue
       marketSizeEnd += endValue
+      marketSizeCagrStart += record.time_series[cagrStartYear] ?? 0
+      marketSizeCagrEnd += record.time_series[cagrEndYear] ?? 0
     })
 
-    // Calculate CAGR
-    const years = actualEndYear - actualStartYear
-    const cagr = marketSizeStart > 0 && years > 0
-      ? (Math.pow(marketSizeEnd / marketSizeStart, 1 / years) - 1) * 100
-      : 0
+    const aggregatedCagrSeries: Record<number, number> = {
+      [cagrStartYear]: marketSizeCagrStart,
+      [cagrEndYear]: marketSizeCagrEnd,
+    }
+    const cagr = calculateCAGRFromTimeSeries(aggregatedCagrSeries, cagrStartYear, cagrEndYear)
 
     // Calculate absolute growth
     const absoluteGrowth = marketSizeEnd - marketSizeStart
@@ -224,6 +235,8 @@ export function GlobalKPICards() {
       marketSizeEnd: marketSizeEndDisplay,
       startYear: actualStartYear,
       endYear: actualEndYear,
+      cagrStartYear,
+      cagrEndYear,
       cagr,
       absoluteGrowth: absoluteGrowthDisplay,
       growthPercentage,
@@ -307,7 +320,7 @@ export function GlobalKPICards() {
             </div>
             <div>
               <p className="text-[10px] text-black uppercase tracking-wider font-semibold">
-                CAGR ({kpiData.startYear}-{kpiData.endYear})
+                CAGR ({kpiData.cagrStartYear}-{kpiData.cagrEndYear})
               </p>
               <p className="text-base font-bold text-black leading-tight">
                 {kpiData.cagr.toFixed(2)}%

@@ -34,7 +34,8 @@ interface DashboardStore {
   dashboardName: string | null // Custom dashboard name
   currency: 'USD' | 'INR' // Currency preference
   showDemoNote: boolean // Toggle for demo data disclaimer note
-  
+  dashboardId: string | null // MongoDB document ID assigned after first save
+
   // Actions
   setData: (data: ComparisonData) => void
   clearData: () => void // Clear all data and reset store for new market data
@@ -69,6 +70,7 @@ interface DashboardStore {
   setDashboardName: (name: string | null) => void
   setCurrency: (currency: 'USD' | 'INR') => void
   setShowDemoNote: (show: boolean) => void
+  setDashboardId: (id: string | null) => void
 }
 
 // Helper function to check if data has B2B/B2C segmentation
@@ -257,6 +259,7 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   dashboardName: null,
   currency: 'USD',
   showDemoNote: false,
+  dashboardId: null,
   
   setData: (data) => {
     const defaultFilters = getDefaultFilters(data)
@@ -295,7 +298,8 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
       defaultFiltersLoaded: false,
       opportunityFiltersLoaded: false,
       geographyFiltersBySegmentType: {},
-      selectedChartGroup: DEFAULT_CHART_GROUP
+      selectedChartGroup: DEFAULT_CHART_GROUP,
+      dashboardId: null,
     })
   },
   
@@ -515,6 +519,7 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   setCurrency: (currency) => set({ currency }),
 
   setShowDemoNote: (show) => set({ showDemoNote: show }),
+  setDashboardId: (id) => set({ dashboardId: id }),
   
   setLoading: (loading) => set({ isLoading: loading }),
   

@@ -3,6 +3,12 @@
 import { useMemo, useState } from 'react'
 import { useDashboardStore } from '@/lib/store'
 import { filterData } from '@/lib/data-processor'
+import {
+  METRICS_END_YEAR,
+  METRICS_START_YEAR,
+  applyMetricsToRecord,
+  getShareDenominatorPool,
+} from '@/lib/metrics-calculator'
 import { ArrowUp, ArrowDown, Download } from 'lucide-react'
 
 interface ComparisonTableProps {
@@ -23,44 +29,50 @@ export function ComparisonTable({ title, height = 600 }: ComparisonTableProps) {
       ? data.data.value.geography_segment_matrix
       : data.data.volume.geography_segment_matrix
 
-    // Filter data
+    // Filter data for table rows
     const filtered = filterData(dataset, filters)
+
+    // Share denominator: each geography's total uses all leaf segments for that geography (not pooled across countries)
+    const shareDenominatorPool = getShareDenominatorPool(dataset, {
+      geographies: filters.geographies,
+      segmentType: filters.segmentType,
+    })
 
     // Get the selected year (use base year or middle of range)
     const year = filters.yearRange[0] + Math.floor((filters.yearRange[1] - filters.yearRange[0]) / 2)
     const startYear = filters.yearRange[0]
     const endYear = filters.yearRange[1]
 
-    // Helper function to parse CAGR (handles string, number, or null)
-    const parseCAGR = (cagr: any): number => {
-      if (cagr === null || cagr === undefined) return 0
-      if (typeof cagr === 'number') return cagr
-      if (typeof cagr === 'string') {
-        // Extract number from string like "5.2%" or "5.2"
-        const cagrStr = cagr.replace('%', '').trim()
-        return parseFloat(cagrStr) || 0
-      }
-      return 0
-    }
-
     // Transform to table format
-    return filtered.map(record => ({
-      geography: record.geography,
-      segment: record.segment,
-      segmentType: record.segment_type,
-      currentValue: record.time_series[year] || 0,
-      startValue: record.time_series[startYear] || 0,
-      endValue: record.time_series[endYear] || 0,
-      growth: record.time_series[startYear] > 0 
-        ? (((record.time_series[endYear] || 0) - (record.time_series[startYear] || 0)) / record.time_series[startYear] * 100)
-        : 0,
-      cagr: parseCAGR(record.cagr),
-      marketShare: record.market_share || 0,
-      sparkline: Object.entries(record.time_series)
-        .filter(([y]) => parseInt(y) >= startYear && parseInt(y) <= endYear)
-        .sort(([a], [b]) => parseInt(a) - parseInt(b))
-        .map(([, value]) => value)
-    }))
+    return filtered.map((record) => {
+      const { cagr, market_share } = applyMetricsToRecord(
+        record,
+        shareDenominatorPool,
+        METRICS_START_YEAR,
+        METRICS_END_YEAR
+      )
+
+      return {
+        geography: record.geography,
+        segment: record.segment,
+        segmentType: record.segment_type,
+        currentValue: record.time_series[year] || 0,
+        startValue: record.time_series[startYear] || 0,
+        endValue: record.time_series[endYear] || 0,
+        growth:
+          record.time_series[startYear] > 0
+            ? (((record.time_series[endYear] || 0) - (record.time_series[startYear] || 0)) /
+                record.time_series[startYear]) *
+              100
+            : 0,
+        cagr,
+        marketShare: market_share,
+        sparkline: Object.entries(record.time_series)
+          .filter(([y]) => parseInt(y) >= startYear && parseInt(y) <= endYear)
+          .sort(([a], [b]) => parseInt(a) - parseInt(b))
+          .map(([, value]) => value),
+      }
+    })
   }, [data, filters])
 
   const sortedData = useMemo(() => {
@@ -161,7 +173,8 @@ export function ComparisonTable({ title, height = 600 }: ComparisonTableProps) {
             {title || 'Data Comparison Table'}
           </h3>
           <p className="text-sm text-black mt-1">
-            Year: {year} | Values in {valueUnit}
+            Year: {year} | Values in {valueUnit} | CAGR &amp; share use mean {METRICS_START_YEAR}–
+            {METRICS_END_YEAR}
           </p>
         </div>
         <button

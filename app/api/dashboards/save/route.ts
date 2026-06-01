@@ -1,35 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { saveDashboard, StorageError } from '@/lib/dashboard-storage'
+import { upsertDashboard, getDashboard, isValidDashboardId } from '@/lib/dashboard-mongo'
+import { assignPartition } from '@/lib/partition'
+import { cacheSet, cacheInvalidate } from '@/lib/slave-cache'
+import { getPublicAppOrigin } from '@/lib/app-origin'
 
 export const dynamic = 'force-dynamic'
-
-/** Derive the public origin from the request so the share URL works behind
- *  any hostname (localhost, custom domain, Vercel preview URL, etc.). */
-function getOrigin(req: NextRequest): string {
-  // Prefer the explicit x-forwarded-host header set by Vercel / reverse proxies
-  const proto = req.headers.get('x-forwarded-proto') || 'https'
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || ''
-  if (host) return `${proto}://${host}`
-
-  // Last resort: derive from Origin header (present on same-origin fetch)
-  return req.headers.get('origin') || ''
-}
 
 export async function POST(request: NextRequest) {
   let body: Record<string, unknown>
 
-  // ── Parse body ────────────────────────────────────────────────────────────
   try {
     body = await request.json()
   } catch {
-    return NextResponse.json(
-      { error: 'Request body is not valid JSON.' },
-      { status: 400 }
-    )
+    return NextResponse.json({ error: 'Request body is not valid JSON.' }, { status: 400 })
   }
 
-  // ── Basic validation ──────────────────────────────────────────────────────
-  const { data, rawIntelligenceData, pricingAnalysisData } = body
+  const { data, rawIntelligenceData, pricingAnalysisData, dashboardId } = body
+
   if (!data && !rawIntelligenceData && !pricingAnalysisData) {
     return NextResponse.json(
       { error: 'No dashboard data provided. Upload at least one data file before generating a link.' },
@@ -37,11 +24,24 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // ── Save ──────────────────────────────────────────────────────────────────
   try {
-    const id = await saveDashboard({
+    const existingId = isValidDashboardId(dashboardId) ? (dashboardId as string) : null
+
+    // Resolve which partition to use:
+    // - existing doc → keep its current partitionKey
+    // - new doc → assign least-loaded partition
+    let partitionKey = 0
+    if (existingId) {
+      const existing = await getDashboard(existingId)
+      partitionKey = existing?.partitionKey ?? (await assignPartition())
+    } else {
+      partitionKey = await assignPartition()
+    }
+
+    const payload = {
       name:                           typeof body.name === 'string' ? body.name : 'Untitled Dashboard',
-      currency:                       body.currency === 'INR' ? 'INR' : 'USD',
+      currency:                       body.currency === 'INR' ? 'INR' as const : 'USD' as const,
+      partitionKey,
       data:                           (body.data as any)                           ?? null,
       intelligenceType:               (body.intelligenceType as any)               ?? null,
       rawIntelligenceData:            body.rawIntelligenceData                     ?? null,
@@ -52,27 +52,37 @@ export async function POST(request: NextRequest) {
       distributorProposition3Data:    body.distributorProposition3Data             ?? null,
       pricingAnalysisData:            body.pricingAnalysisData                     ?? null,
       showDemoNote:                   body.showDemoNote === true,
+    }
+
+    const id = await upsertDashboard(existingId, payload)
+
+    // Update slave cache: invalidate stale entry then re-warm with fresh data
+    cacheInvalidate(id, partitionKey)
+    cacheSet(id, partitionKey, {
+      _id: id,
+      ...payload,
+      readCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     })
 
-    const shareUrl = `${getOrigin(request)}/shared/${id}`
+    const origin = getPublicAppOrigin(request)
+    if (!origin) {
+      return NextResponse.json(
+        {
+          error:
+            'Could not determine a public URL for this link. Set NEXT_PUBLIC_APP_URL in .env.local (e.g. your deployed URL or LAN IP) and try again.',
+        },
+        { status: 500 }
+      )
+    }
+    const shareUrl = `${origin}/shared/${id}`
     return NextResponse.json({ id, shareUrl }, { status: 201 })
 
   } catch (err) {
-    if (err instanceof StorageError) {
-      if (err.code === 'TOO_LARGE') {
-        return NextResponse.json({ error: err.message }, { status: 413 })
-      }
-      if (err.code === 'WRITE_FAILED') {
-        console.error('[dashboards/save] Write failed:', err)
-        return NextResponse.json(
-          { error: 'Could not persist the dashboard. Please try again.' },
-          { status: 503 }
-        )
-      }
-    }
-    console.error('[dashboards/save] Unexpected error:', err)
+    console.error('[dashboards/save] Error:', err)
     return NextResponse.json(
-      { error: 'An unexpected error occurred while saving the dashboard.' },
+      { error: 'Could not save the dashboard. Please try again.' },
       { status: 500 }
     )
   }

@@ -21,8 +21,7 @@ import { ComparisonTable } from '@/components/charts/ComparisonTable'
 import { WaterfallChart } from '@/components/charts/WaterfallChart'
 import { D3BubbleChartIndependent } from '@/components/charts/D3BubbleChartIndependent'
 import { CompetitiveIntelligence } from '@/components/charts/CompetitiveIntelligence'
-import DistributorsIntelligence from '@/components/charts/DistributorsIntelligenceTable'
-import { CustomerIntelligenceTable } from '@/components/charts/CustomerIntelligenceTable'
+import { IntelligenceDatabaseViews } from '@/components/charts/IntelligenceDatabaseViews'
 import { PricingAnalysisView } from '@/components/charts/PricingAnalysisView'
 import { InsightsPanel } from '@/components/InsightsPanel'
 import { FilterPresets } from '@/components/filters/FilterPresets'
@@ -170,16 +169,8 @@ export function DashboardShell({ readOnly = false }: Props) {
               )}
             </div>
           </div>
-          <div className="bg-white rounded-lg shadow-sm p-6 space-y-10">
-            {(intelligenceType === 'customer' || intelligenceType === 'both') && (
-              <CustomerIntelligenceTable title={intelligenceType === 'both' ? 'Customer Intelligence Database' : `${typeLabel} Intelligence Database`} />
-            )}
-            {(intelligenceType === 'distributor' || intelligenceType === 'both') &&
-              (hasDistributorWorkbook ? (
-                <CustomerIntelligenceTable intelligenceSource="distributor" title="Distributor Intelligence Database" />
-              ) : (
-                <DistributorsIntelligence title="Distributors Intelligence Database" height={500} />
-              ))}
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <IntelligenceDatabaseViews />
           </div>
         </div>
         <DashboardBuilderDownload />
@@ -328,18 +319,13 @@ export function DashboardShell({ readOnly = false }: Props) {
                     {activeTab === 'bubble' && <div id="bubble-chart"><D3BubbleChartIndependent title="Coherent Opportunity Matrix" height={500} /></div>}
                     {activeTab === 'competitive-intelligence' && <div id="competitive-intelligence-chart"><CompetitiveIntelligence height={600} /></div>}
                     {activeTab === 'customer-intelligence' && (
-                      <div id="customer-intelligence-chart" className="space-y-8">
-                        {(intelligenceType === 'customer' || intelligenceType === 'both') && (
-                          <CustomerIntelligenceTable title="Customer Intelligence Database" />
-                        )}
+                      <div id="customer-intelligence-chart">
+                        <IntelligenceDatabaseViews preferredSource="customer" />
                       </div>
                     )}
                     {activeTab === 'distributor-intelligence' && (
-                      <div id="distributor-intelligence-chart" className="space-y-8">
-                        {(intelligenceType === 'distributor' || intelligenceType === 'both') &&
-                          (hasDistributorWorkbook
-                            ? <CustomerIntelligenceTable intelligenceSource="distributor" title="Distributor Intelligence Database" />
-                            : <DistributorsIntelligence title="Distributors Intelligence Database" height={500} />)}
+                      <div id="distributor-intelligence-chart">
+                        <IntelligenceDatabaseViews preferredSource="distributor" />
                       </div>
                     )}
                     {activeTab === 'pricing-bar' && <div id="pricing-bar-chart"><PricingAnalysisView activeTab="bar" /></div>}
@@ -356,30 +342,10 @@ export function DashboardShell({ readOnly = false }: Props) {
                     {isChartVisible('waterfall') && <div className="border-b pb-8"><h3 className="text-lg font-semibold text-black mb-4">Waterfall Chart</h3><WaterfallChart title="Contribution Analysis - Waterfall Chart" height={400} /></div>}
                     {isChartVisible('bubble') && <div className="border-b pb-8"><h3 className="text-lg font-semibold text-black mb-4">Bubble Chart</h3><D3BubbleChartIndependent title="Coherent Opportunity Matrix" height={450} /></div>}
                     {isChartVisible('competitive-intelligence') && <div className="border-b pb-8"><CompetitiveIntelligence height={600} /></div>}
-                    {isChartVisible('customer-intelligence') && (
-                      <div className="space-y-8">
-                        {(intelligenceType === 'customer' || intelligenceType === 'both') && (
-                          <div className="border-b pb-8">
-                            <h3 className="text-lg font-semibold text-black mb-4">Customer Intelligence Database</h3>
-                            <CustomerIntelligenceTable title="Customer Intelligence Database" />
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {isChartVisible('distributor-intelligence') && (
-                      <div className="space-y-8">
-                        {(intelligenceType === 'distributor' || intelligenceType === 'both') &&
-                          (hasDistributorWorkbook ? (
-                            <div className="border-b pb-8">
-                              <h3 className="text-lg font-semibold text-black mb-4">Distributor Intelligence Database</h3>
-                              <CustomerIntelligenceTable intelligenceSource="distributor" title="Distributor Intelligence Database" />
-                            </div>
-                          ) : (
-                            <div>
-                              <h3 className="text-lg font-semibold text-black mb-4">Distributors Intelligence Database</h3>
-                              <DistributorsIntelligence title="Distributors Intelligence Database" height={500} />
-                            </div>
-                          ))}
+                    {(isChartVisible('customer-intelligence') ||
+                      isChartVisible('distributor-intelligence')) && (
+                      <div className="border-b pb-8">
+                        <IntelligenceDatabaseViews />
                       </div>
                     )}
                     {isChartVisible('pricing-grouped-bar') && <div className="border-b pb-8"><PricingAnalysisView activeTab="bar" /></div>}

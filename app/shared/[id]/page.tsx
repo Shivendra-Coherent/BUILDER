@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { useDashboardStore } from '@/lib/store'
 import { DashboardShell } from '@/components/DashboardShell'
-import type { DashboardSnapshot } from '@/lib/dashboard-storage'
+import type { DashboardDocument } from '@/lib/dashboard-mongo'
 
 export default function SharedDashboardPage() {
   const params = useParams()
@@ -45,7 +45,7 @@ export default function SharedDashboardPage() {
           throw new Error(body.error || `HTTP ${res.status}`)
         }
 
-        const snapshot: DashboardSnapshot = await res.json()
+        const snapshot: DashboardDocument = await res.json()
 
         // Clear any previously loaded dashboard before hydrating
         clearData()

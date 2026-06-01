@@ -1,14 +1,16 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useDashboardStore } from '@/lib/store'
 import { DashboardShell } from '@/components/DashboardShell'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Footer } from '@/components/Footer'
 import { LandingHeader, LandingHero } from '@/components/LandingHero'
 
-export default function DashboardPage() {
+function DashboardPageContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const showHeroLanding = searchParams.get('home') === '1'
   const {
     setLoading,
     data,
@@ -105,13 +107,13 @@ export default function DashboardPage() {
     )
   }
 
-  // No data yet — hero landing
-  if (!hasAnyData) {
+  // Hero landing — default when no data, or when returning home from builder header
+  if (!hasAnyData || showHeroLanding) {
     const openBuilder = () => router.push('/dashboard-builder')
     return (
-      <div className="flex min-h-screen flex-col bg-slate-50">
+      <div className="flex min-h-screen flex-col bg-[#070b14]">
         <LandingHeader onOpenBuilder={openBuilder} />
-        <main className="container mx-auto flex-1 px-0">
+        <main className="flex-1 px-0">
           <LandingHero onOpenBuilder={openBuilder} />
         </main>
         <Footer />
@@ -120,4 +122,12 @@ export default function DashboardPage() {
   }
 
   return <DashboardShell />
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={null}>
+      <DashboardPageContent />
+    </Suspense>
+  )
 }

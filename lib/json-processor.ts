@@ -4,6 +4,12 @@
  */
 
 import type { ComparisonData, DataRecord, Metadata, GeographyDimension, SegmentDimension, SegmentHierarchy } from './types'
+import {
+  METRICS_END_YEAR,
+  METRICS_START_YEAR,
+  applyMetricsToRecords,
+  calculateCAGRFromTimeSeries,
+} from './metrics-calculator'
 import fs from 'fs/promises'
 import path from 'path'
 
@@ -957,17 +963,8 @@ async function processSegmentTypeAsync(
         timeSeries[year] = data[yearStr] !== null && data[yearStr] !== undefined ? (data[yearStr] as number) : 0
       })
       
-      // Parse CAGR - it might be a string like "5.2%" or a number
-      let cagr = 0
-      if (data.CAGR !== null && data.CAGR !== undefined) {
-        if (typeof data.CAGR === 'string') {
-          // Extract number from string like "5.2%" or "5.2"
-          const cagrStr = data.CAGR.replace('%', '').trim()
-          cagr = parseFloat(cagrStr) || 0
-        } else if (typeof data.CAGR === 'number') {
-          cagr = data.CAGR
-        }
-      }
+      // CAGR always derived from 2026–2033 time series (not sheet CAGR column)
+      const cagr = calculateCAGRFromTimeSeries(timeSeries, METRICS_START_YEAR, METRICS_END_YEAR)
       
       records.push({
         geography,
@@ -1571,19 +1568,11 @@ export async function processJsonDataAsync(
             }
           }
 
-          // Calculate CAGR for aggregated record
-          const years = Object.keys(aggregatedTimeSeries).map(Number).sort()
-          let regionCagr = 0
-          if (years.length >= 2) {
-            const firstYear = years[0]
-            const lastYear = years[years.length - 1]
-            const firstValue = aggregatedTimeSeries[firstYear]
-            const lastValue = aggregatedTimeSeries[lastYear]
-            const numYears = lastYear - firstYear
-            if (firstValue > 0 && numYears > 0) {
-              regionCagr = (Math.pow(lastValue / firstValue, 1 / numYears) - 1) * 100
-            }
-          }
+          const regionCagr = calculateCAGRFromTimeSeries(
+            aggregatedTimeSeries,
+            METRICS_START_YEAR,
+            METRICS_END_YEAR
+          )
 
           newRecords.push({
             geography: region,
@@ -1665,19 +1654,10 @@ export async function processJsonDataAsync(
     // END POST-PROCESSING
     // ============================================================
 
-    // Calculate market share for each record
-    const calculateMarketShare = (records: DataRecord[], year: number) => {
-      const yearTotal = records.reduce((sum, r) => sum + (r.time_series[year] || 0), 0)
-      records.forEach(record => {
-        const value = record.time_series[year] || 0
-        record.market_share = yearTotal > 0 ? (value / yearTotal) * 100 : 0
-      })
-    }
-    
-    // Calculate market share for base year
-    calculateMarketShare(valueRecords, baseYear)
+    // CAGR 2026–2033 and per-geography mean share % (2026–2033)
+    applyMetricsToRecords(valueRecords)
     if (volumeRecords.length > 0) {
-      calculateMarketShare(volumeRecords, baseYear)
+      applyMetricsToRecords(volumeRecords)
     }
     
     // Build metadata

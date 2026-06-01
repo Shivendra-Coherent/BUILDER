@@ -34,7 +34,9 @@ export default function DashboardBuilderPage() {
     setPricingAnalysisData,
     setDashboardName,
     setCurrency,
-    setShowDemoNote
+    setShowDemoNote,
+    setDashboardId,
+    dashboardName: storedDashboardName,
   } = useDashboardStore()
   
   // Section 1: Market Intelligence
@@ -339,9 +341,11 @@ export default function DashboardBuilderPage() {
     setShareLinkError(null)
 
     try {
+      const { dashboardId: existingDashboardId } = useDashboardStore.getState()
       const payload = {
         name: name || dashboardNameInput || 'Untitled Dashboard',
         currency: currency || currencyInput,
+        dashboardId: existingDashboardId ?? undefined,
         data,
         intelligenceType,
         rawIntelligenceData,
@@ -439,8 +443,9 @@ export default function DashboardBuilderPage() {
       }
 
       const raw = await response.json()
-      const { _ingestMetrics, ...data } = raw as ComparisonData & {
+      const { _ingestMetrics, _dashboardId, ...data } = raw as ComparisonData & {
         _ingestMetrics?: Record<string, number>
+        _dashboardId?: string
       }
       if (_ingestMetrics) {
         console.log('[process-excel] server metrics:', _ingestMetrics)
@@ -451,6 +456,11 @@ export default function DashboardBuilderPage() {
       setData(data)
       setLoading(false)
       setError(null)
+
+      // Store the MongoDB dashboard ID so Generate Link doesn't need to re-upload
+      if (_dashboardId) {
+        setDashboardId(_dashboardId)
+      }
       
       // Store dashboard name and currency
       setDashboardName(dashboardNameInput || 'India Market Analysis')
@@ -529,6 +539,10 @@ export default function DashboardBuilderPage() {
         fileName: fileData.name,
         fileData: fileData.data,
         intelligenceType: intelligenceType,
+        marketName:
+          dashboardNameInput?.trim() ||
+          storedDashboardName?.trim() ||
+          'Global market',
       }),
     })
 
@@ -774,122 +788,130 @@ export default function DashboardBuilderPage() {
     router.push('/')
   }
 
+  const statusBlockClass = (status: 'idle' | 'processing' | 'success' | 'error') =>
+    status === 'success'
+      ? 'builder-status-success'
+      : status === 'error'
+        ? 'builder-status-error'
+        : 'builder-status-warning'
+
   const renderIntelStatusBlock = (
     status: 'idle' | 'processing' | 'success' | 'error',
     message: string
   ) =>
     message ? (
-      <div
-        className={`p-4 rounded-md flex items-start gap-3 ${
-          status === 'success'
-            ? 'bg-green-50 border border-green-200'
-            : status === 'error'
-              ? 'bg-red-50 border border-red-200'
-              : 'bg-yellow-50 border border-yellow-200'
-        }`}
-      >
+      <div className={`p-4 rounded-xl flex items-start gap-3 ${statusBlockClass(status)}`}>
         {status === 'success' ? (
-          <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+          <CheckCircle2 className="h-5 w-5 text-emerald-400 flex-shrink-0 mt-0.5" />
         ) : status === 'error' ? (
-          <XCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+          <XCircle className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
         ) : (
-          <Loader2 className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5 animate-spin" />
+          <Loader2 className="h-5 w-5 text-sky-400 flex-shrink-0 mt-0.5 animate-spin" />
         )}
-        <p
-          className={`text-sm whitespace-pre-wrap ${
-            status === 'success' ? 'text-green-800' : status === 'error' ? 'text-red-800' : 'text-yellow-800'
-          }`}
-        >
-          {message}
-        </p>
+        <p className="text-sm whitespace-pre-wrap">{message}</p>
       </div>
     ) : null
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Image 
-                src="/logo.png" 
-                alt="Coherent Market Insights Logo" 
-                width={150} 
-                height={60}
-                className="h-auto w-auto max-w-[150px]"
-                priority
-              />
-              <div>
-                <h1 className="text-xl font-bold text-black">Dashboard Builder</h1>
-                <p className="text-sm text-gray-600">Build your custom dashboard step by step</p>
-              </div>
-            </div>
-            <button
-              onClick={() => router.push('/')}
-              className="px-4 py-2 text-sm text-gray-600 hover:text-black hover:bg-gray-100 rounded-md transition-colors"
-            >
-              Back to Dashboard
-            </button>
-          </div>
-        </div>
+    <div className="builder-page relative flex min-h-screen flex-col overflow-hidden">
+      <div className="landing-bg-stack" aria-hidden>
+        <div className="landing-bg-noise" />
+        <div className="landing-bg-aurora" />
+        <div className="landing-bg-grid-dark" />
+        <div className="landing-bg-vignette" />
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 container mx-auto px-6 py-8">
-        <div className="max-w-5xl mx-auto">
-          
-          {/* Tabs */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-            <div className="flex border-b border-gray-200">
+      <div className="builder-content">
+        {/* Header */}
+        <header className="builder-header">
+          <div className="container mx-auto px-6 py-4">
+            <div className="flex items-center justify-between gap-4">
               <button
-                onClick={() => setActiveTab('market')}
-                className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 text-sm font-medium transition-colors ${
-                  activeTab === 'market'
-                    ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                }`}
+                type="button"
+                onClick={() => router.push('/?home=1')}
+                className="flex min-w-0 cursor-pointer items-center gap-4 rounded-lg text-left transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+                title="Back to home"
               >
-                <FileSpreadsheet className="w-5 h-5" />
-                1. Market Intelligence
+                <span className="shrink-0 rounded-lg bg-white px-3 py-2 shadow-sm">
+                  <Image
+                    src="/logo.svg"
+                    alt="Coherent Market Insights"
+                    width={200}
+                    height={48}
+                    unoptimized
+                    className="h-8 w-auto max-w-[180px] object-contain sm:h-9"
+                    priority
+                  />
+                </span>
+                <div className="min-w-0 border-l border-white/10 pl-4">
+                  <h1 className="text-xl font-bold text-white">Dashboard Builder</h1>
+                  <p className="text-sm text-slate-400">
+                    Configure your analytics workspace in three guided steps
+                  </p>
+                </div>
               </button>
               <button
-                onClick={() => setActiveTab('intelligence')}
-                className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 text-sm font-medium transition-colors ${
-                  activeTab === 'intelligence'
-                    ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                }`}
+                type="button"
+                onClick={() => router.push('/')}
+                className="builder-btn-ghost shrink-0"
               >
-                <Users className="w-5 h-5" />
-                2. Customer/Distributor Intelligence
-              </button>
-              <button
-                onClick={() => setActiveTab('pricing')}
-                className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 text-sm font-medium transition-colors ${
-                  activeTab === 'pricing'
-                    ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                }`}
-              >
-                <DollarSign className="w-5 h-5" />
-                3. Pricing Analysis
+                Back to Dashboard
               </button>
             </div>
           </div>
+        </header>
+
+        {/* Main Content */}
+        <div className="container mx-auto flex-1 px-6 py-8">
+          <div className="mx-auto max-w-5xl">
+            {/* Tabs */}
+            <div className="builder-tabs mb-6">
+              <div className="flex border-b border-white/[0.06]">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('market')}
+                  className={`builder-tab ${
+                    activeTab === 'market' ? 'builder-tab-active' : 'builder-tab-inactive'
+                  }`}
+                >
+                  <FileSpreadsheet className="h-5 w-5" />
+                  1. Market Intelligence
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('intelligence')}
+                  className={`builder-tab ${
+                    activeTab === 'intelligence' ? 'builder-tab-active' : 'builder-tab-inactive'
+                  }`}
+                >
+                  <Users className="h-5 w-5" />
+                  2. Customer/Distributor Intelligence
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('pricing')}
+                  className={`builder-tab ${
+                    activeTab === 'pricing' ? 'builder-tab-active' : 'builder-tab-inactive'
+                  }`}
+                >
+                  <DollarSign className="h-5 w-5" />
+                  3. Pricing Analysis
+                </button>
+              </div>
+            </div>
 
           {/* Tab Content */}
           {activeTab === 'market' && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
+          <div className="builder-card p-8">
             <div className="mb-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-2xl font-bold text-black mb-2">1. Market Intelligence</h2>
-                  <p className="text-sm text-gray-600">Upload your value and volume sheets to build the market analysis dashboard</p>
+                  <h2 className="text-2xl font-bold text-white mb-2">1. Market Intelligence</h2>
+                  <p className="text-sm text-slate-400">Upload your value and volume sheets to build the market analysis dashboard</p>
                 </div>
                 {/* Demo Note Toggle */}
                 <div className="flex items-center gap-3 ml-6 flex-shrink-0">
-                  <span className="text-sm text-gray-600 font-medium">Show Demo Note</span>
+                  <span className="text-sm text-slate-400 font-medium">Show Demo Note</span>
                   <button
                     type="button"
                     onClick={() => {
@@ -897,8 +919,8 @@ export default function DashboardBuilderPage() {
                       setShowDemoNoteToggle(next)
                       setShowDemoNote(next)
                     }}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                      showDemoNoteToggle ? 'bg-blue-600' : 'bg-gray-300'
+                    className={`builder-toggle focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-slate-900 ${
+                      showDemoNoteToggle ? 'builder-toggle-on' : 'builder-toggle-off'
                     }`}
                     aria-pressed={showDemoNoteToggle}
                   >
@@ -915,7 +937,7 @@ export default function DashboardBuilderPage() {
             <div className="space-y-6">
               {/* Dashboard Name */}
               <div>
-                <label htmlFor="dashboardName" className="block text-sm font-medium text-black mb-2">
+                <label htmlFor="dashboardName" className="block text-sm font-medium text-slate-200 mb-2">
                   Dashboard Name <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -923,17 +945,17 @@ export default function DashboardBuilderPage() {
                   id="dashboardName"
                   value={dashboardNameInput}
                   onChange={(e) => setDashboardNameInput(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black"
+                  className="builder-input"
                   placeholder="India Market Analysis"
                 />
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-slate-500">
                   This name will appear as the subtitle below "Coherent Dashboard"
                 </p>
               </div>
 
               {/* Currency Selector */}
               <div>
-                <label className="block text-sm font-medium text-black mb-2">
+                <label className="block text-sm font-medium text-slate-200 mb-2">
                   Currency <span className="text-red-500">*</span>
                 </label>
                 <div className="flex gap-4">
@@ -944,9 +966,9 @@ export default function DashboardBuilderPage() {
                       value="USD"
                       checked={currencyInput === 'USD'}
                       onChange={() => setCurrencyInput('USD')}
-                      className="w-4 h-4 text-blue-600"
+                      className="builder-radio"
                     />
-                    <span className="text-sm font-medium text-black">USD ($)</span>
+                    <span className="text-sm font-medium text-slate-200">USD ($)</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -955,28 +977,28 @@ export default function DashboardBuilderPage() {
                       value="INR"
                       checked={currencyInput === 'INR'}
                       onChange={() => setCurrencyInput('INR')}
-                      className="w-4 h-4 text-blue-600"
+                      className="builder-radio"
                     />
-                    <span className="text-sm font-medium text-black">INR (₹)</span>
+                    <span className="text-sm font-medium text-slate-200">INR (₹)</span>
                   </label>
                 </div>
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-slate-500">
                   Select the currency for displaying values throughout the dashboard
                 </p>
               </div>
 
               {/* Value File Upload */}
               <div>
-                <label className="block text-sm font-medium text-black mb-2">
+                <label className="block text-sm font-medium text-slate-200 mb-2">
                   Value File (Required) <span className="text-red-500">*</span>
                 </label>
-                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-gray-400 transition-colors">
+                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 builder-upload-zone">
                   <div className="space-y-1 text-center">
-                    <FileSpreadsheet className="mx-auto h-12 w-12 text-gray-400" />
-                    <div className="flex text-sm text-gray-600">
+                    <FileSpreadsheet className="mx-auto h-12 w-12 text-slate-500" />
+                    <div className="flex text-sm text-slate-400">
                       <label
                         htmlFor="valueFile"
-                        className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+                        className="builder-upload-link focus-within:outline-none focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 focus-within:ring-offset-slate-900"
                       >
                         <span>Upload a file</span>
                         <input
@@ -990,9 +1012,9 @@ export default function DashboardBuilderPage() {
                       </label>
                       <p className="pl-1">or drag and drop</p>
                     </div>
-                    <p className="text-xs text-gray-500">CSV, XLSX, or XLS up to 50MB</p>
+                    <p className="text-xs text-slate-500">CSV, XLSX, or XLS up to 50MB</p>
                     {valueFile && (
-                      <p className="text-sm text-green-600 mt-2">
+                      <p className="text-sm text-emerald-400 mt-2">
                         ✓ {valueFile.name} ({(valueFile.size / 1024 / 1024).toFixed(2)} MB)
                       </p>
                     )}
@@ -1002,64 +1024,64 @@ export default function DashboardBuilderPage() {
 
               {/* Volume File Upload */}
               <div>
-                <label className="block text-sm font-medium text-black mb-2">
+                <label className="block text-sm font-medium text-slate-200 mb-2">
                   Volume File (Optional)
                 </label>
                 <div className="mb-3">
-                  <span className="block text-sm font-medium text-black mb-2">Volume units</span>
+                  <span className="block text-sm font-medium text-slate-200 mb-2">Volume units</span>
                   <div className="grid grid-cols-2 gap-4 sm:flex sm:flex-wrap sm:gap-6">
                     <label className="flex cursor-pointer items-center gap-2">
                       <input
                         type="radio"
                         name="volumeUnit"
-                        className="h-4 w-4 border-gray-300 text-teal-600 focus:ring-teal-500"
+                        className="builder-radio"
                         checked={volumeUnitInput === 'million-units'}
                         onChange={() => setVolumeUnitInput('million-units')}
                       />
-                      <span className="text-sm text-black">Million units</span>
+                      <span className="text-sm text-slate-200">Million units</span>
                     </label>
                     <label className="flex cursor-pointer items-center gap-2">
                       <input
                         type="radio"
                         name="volumeUnit"
-                        className="h-4 w-4 border-gray-300 text-teal-600 focus:ring-teal-500"
+                        className="builder-radio"
                         checked={volumeUnitInput === 'units'}
                         onChange={() => setVolumeUnitInput('units')}
                       />
-                      <span className="text-sm text-black">Units</span>
+                      <span className="text-sm text-slate-200">Units</span>
                     </label>
                     <label className="flex cursor-pointer items-center gap-2">
                       <input
                         type="radio"
                         name="volumeUnit"
-                        className="h-4 w-4 border-gray-300 text-teal-600 focus:ring-teal-500"
+                        className="builder-radio"
                         checked={volumeUnitInput === 'th-units'}
                         onChange={() => setVolumeUnitInput('th-units')}
                       />
-                      <span className="text-sm text-black">Th units</span>
+                      <span className="text-sm text-slate-200">Th units</span>
                     </label>
                     <label className="flex cursor-pointer items-center gap-2">
                       <input
                         type="radio"
                         name="volumeUnit"
-                        className="h-4 w-4 border-gray-300 text-teal-600 focus:ring-teal-500"
+                        className="builder-radio"
                         checked={volumeUnitInput === 'tons'}
                         onChange={() => setVolumeUnitInput('tons')}
                       />
-                      <span className="text-sm text-black">Tons</span>
+                      <span className="text-sm text-slate-200">Tons</span>
                     </label>
                   </div>
-                  <p className="mt-1 text-xs text-gray-500">
+                  <p className="mt-1 text-xs text-slate-500">
                     Select how volume figures in your file should be labeled on charts and KPIs
                   </p>
                 </div>
-                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-gray-400 transition-colors">
+                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 builder-upload-zone">
                   <div className="space-y-1 text-center">
-                    <FileSpreadsheet className="mx-auto h-12 w-12 text-gray-400" />
-                    <div className="flex text-sm text-gray-600">
+                    <FileSpreadsheet className="mx-auto h-12 w-12 text-slate-500" />
+                    <div className="flex text-sm text-slate-400">
                       <label
                         htmlFor="volumeFile"
-                        className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+                        className="builder-upload-link focus-within:outline-none focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 focus-within:ring-offset-slate-900"
                       >
                         <span>Upload a file</span>
                         <input
@@ -1073,9 +1095,9 @@ export default function DashboardBuilderPage() {
                       </label>
                       <p className="pl-1">or drag and drop</p>
                     </div>
-                    <p className="text-xs text-gray-500">CSV, XLSX, or XLS up to 50MB</p>
+                    <p className="text-xs text-slate-500">CSV, XLSX, or XLS up to 50MB</p>
                     {volumeFile && (
-                      <p className="text-sm text-green-600 mt-2">
+                      <p className="text-sm text-emerald-400 mt-2">
                         ✓ {volumeFile.name} ({(volumeFile.size / 1024 / 1024).toFixed(2)} MB)
                       </p>
                     )}
@@ -1085,19 +1107,19 @@ export default function DashboardBuilderPage() {
 
               {/* Cross Value File Upload */}
               <div>
-                <label className="block text-sm font-medium text-black mb-1">
-                  Cross Value File <span className="text-gray-400 font-normal">(Optional)</span>
+                <label className="block text-sm font-medium text-slate-200 mb-1">
+                  Cross Value File <span className="text-slate-500 font-normal">(Optional)</span>
                 </label>
-                <p className="text-xs text-gray-500 mb-2">
+                <p className="text-xs text-slate-500 mb-2">
                   CSV/Excel with columns: Region, Segment, Sub-segment, Sub-segment 1, [years…] — adds a cross-tabulated segment to the dashboard.
                 </p>
-                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-gray-400 transition-colors">
+                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 builder-upload-zone">
                   <div className="space-y-1 text-center">
-                    <FileSpreadsheet className="mx-auto h-12 w-12 text-gray-400" />
-                    <div className="flex text-sm text-gray-600">
+                    <FileSpreadsheet className="mx-auto h-12 w-12 text-slate-500" />
+                    <div className="flex text-sm text-slate-400">
                       <label
                         htmlFor="crossValueFile"
-                        className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+                        className="builder-upload-link focus-within:outline-none focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 focus-within:ring-offset-slate-900"
                       >
                         <span>Upload a file</span>
                         <input
@@ -1111,9 +1133,9 @@ export default function DashboardBuilderPage() {
                       </label>
                       <p className="pl-1">or drag and drop</p>
                     </div>
-                    <p className="text-xs text-gray-500">CSV, XLSX, or XLS up to 50MB</p>
+                    <p className="text-xs text-slate-500">CSV, XLSX, or XLS up to 50MB</p>
                     {crossValueFile && (
-                      <p className="text-sm text-green-600 mt-2">
+                      <p className="text-sm text-emerald-400 mt-2">
                         ✓ {crossValueFile.name} ({(crossValueFile.size / 1024 / 1024).toFixed(2)} MB)
                       </p>
                     )}
@@ -1123,19 +1145,19 @@ export default function DashboardBuilderPage() {
 
               {/* Cross Volume File Upload */}
               <div>
-                <label className="block text-sm font-medium text-black mb-1">
-                  Cross Volume File <span className="text-gray-400 font-normal">(Optional)</span>
+                <label className="block text-sm font-medium text-slate-200 mb-1">
+                  Cross Volume File <span className="text-slate-500 font-normal">(Optional)</span>
                 </label>
-                <p className="text-xs text-gray-500 mb-2">
+                <p className="text-xs text-slate-500 mb-2">
                   Same format as Cross Value but for volume data.
                 </p>
-                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-gray-400 transition-colors">
+                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 builder-upload-zone">
                   <div className="space-y-1 text-center">
-                    <FileSpreadsheet className="mx-auto h-12 w-12 text-gray-400" />
-                    <div className="flex text-sm text-gray-600">
+                    <FileSpreadsheet className="mx-auto h-12 w-12 text-slate-500" />
+                    <div className="flex text-sm text-slate-400">
                       <label
                         htmlFor="crossVolumeFile"
-                        className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+                        className="builder-upload-link focus-within:outline-none focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 focus-within:ring-offset-slate-900"
                       >
                         <span>Upload a file</span>
                         <input
@@ -1149,9 +1171,9 @@ export default function DashboardBuilderPage() {
                       </label>
                       <p className="pl-1">or drag and drop</p>
                     </div>
-                    <p className="text-xs text-gray-500">CSV, XLSX, or XLS up to 50MB</p>
+                    <p className="text-xs text-slate-500">CSV, XLSX, or XLS up to 50MB</p>
                     {crossVolumeFile && (
-                      <p className="text-sm text-green-600 mt-2">
+                      <p className="text-sm text-emerald-400 mt-2">
                         ✓ {crossVolumeFile.name} ({(crossVolumeFile.size / 1024 / 1024).toFixed(2)} MB)
                       </p>
                     )}
@@ -1161,33 +1183,15 @@ export default function DashboardBuilderPage() {
 
               {/* Status Message */}
               {marketStatusMessage && (
-                <div
-                  className={`p-4 rounded-md flex items-start gap-3 ${
-                    marketStatus === 'success'
-                      ? 'bg-green-50 border border-green-200'
-                      : marketStatus === 'error'
-                      ? 'bg-red-50 border border-red-200'
-                      : 'bg-yellow-50 border border-yellow-200'
-                  }`}
-                >
+                <div className={`p-4 rounded-xl flex items-start gap-3 ${statusBlockClass(marketStatus)}`}>
                   {marketStatus === 'success' ? (
-                    <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+                    <CheckCircle2 className="h-5 w-5 text-emerald-400 flex-shrink-0 mt-0.5" />
                   ) : marketStatus === 'error' ? (
-                    <XCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                    <XCircle className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
                   ) : (
-                    <Loader2 className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5 animate-spin" />
+                    <Loader2 className="h-5 w-5 text-sky-400 flex-shrink-0 mt-0.5 animate-spin" />
                   )}
-                  <p
-                    className={`text-sm ${
-                      marketStatus === 'success'
-                        ? 'text-green-800'
-                        : marketStatus === 'error'
-                        ? 'text-red-800'
-                        : 'text-yellow-800'
-                    }`}
-                  >
-                    {marketStatusMessage}
-                  </p>
+                  <p className="text-sm">{marketStatusMessage}</p>
                 </div>
               )}
 
@@ -1195,7 +1199,7 @@ export default function DashboardBuilderPage() {
               <button
                 onClick={handleProcessMarketIntelligence}
                 disabled={!valueFile || isProcessingMarket}
-                className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
+                className="builder-btn-primary"
               >
                 {isProcessingMarket ? (
                   <>
@@ -1214,22 +1218,22 @@ export default function DashboardBuilderPage() {
           )}
 
           {activeTab === 'intelligence' && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
+          <div className="builder-card p-8">
             <div className="mb-6">
-              <h2 className="text-2xl font-bold text-black mb-2">2. Intelligence Data Input</h2>
-              <p className="text-sm text-gray-600">Add customer or distributor intelligence data to your dashboard</p>
+              <h2 className="text-2xl font-bold text-white mb-2">2. Intelligence Data Input</h2>
+              <p className="text-sm text-slate-400">Add customer or distributor intelligence data to your dashboard</p>
             </div>
 
             <IntelligenceDataInput mode={intelMode} onModeChange={setIntelMode} />
 
-            <div className="mt-6 pt-6 border-t border-gray-200 space-y-8">
+            <div className="mt-6 pt-6 border-t border-white/[0.06] space-y-8">
               <div>
-                <h3 className="text-sm font-semibold text-black mb-2">Upload intelligence workbooks</h3>
-                <p className="text-xs text-gray-600 mb-4">
+                <h3 className="text-sm font-semibold text-slate-100 mb-2">Upload intelligence workbooks</h3>
+                <p className="text-xs text-slate-400 mb-4">
                   Each workbook may include three worksheets whose names contain{' '}
-                  <span className="font-medium text-gray-800">Proposition 1</span>,{' '}
-                  <span className="font-medium text-gray-800">Proposition 2</span>, and{' '}
-                  <span className="font-medium text-gray-800">Proposition 3</span>. Basic, Advance, and Premium tables
+                  <span className="font-medium text-slate-200">Proposition 1</span>,{' '}
+                  <span className="font-medium text-slate-200">Proposition 2</span>, and{' '}
+                  <span className="font-medium text-slate-200">Proposition 3</span>. Basic, Advance, and Premium tables
                   map to those sheets. CSV or single-sheet Excel files use the first sheet as Proposition 1. When{' '}
                   <strong>both</strong> customer and distributor are enabled, upload <strong>two separate files</strong>{' '}
                   and process each one so parsers apply the correct column rules.
@@ -1237,19 +1241,19 @@ export default function DashboardBuilderPage() {
               </div>
 
               {intelMode.customer && (
-                <div className="space-y-4 rounded-lg border border-gray-100 bg-gray-50/50 p-4">
+                <div className="builder-panel-nested space-y-4">
                   <div className="flex items-center gap-2">
-                    <Users className="h-5 w-5 text-gray-600" />
-                    <h4 className="text-sm font-semibold text-black">Customer intelligence workbook</h4>
+                    <Users className="h-5 w-5 text-sky-400/80" />
+                    <h4 className="text-sm font-semibold text-slate-100">Customer intelligence workbook</h4>
                   </div>
-                  <label className="block text-sm font-medium text-black mb-2">
+                  <label className="block text-sm font-medium text-slate-200 mb-2">
                     Customer workbook <span className="text-red-500">*</span>
                   </label>
                   <div
                     className={`mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-md transition-colors ${
                       isDraggingCustomerIntel
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-300 hover:border-gray-400'
+                        ? 'builder-upload-zone-active'
+                        : 'builder-upload-zone'
                     }`}
                     onDrop={handleCustomerIntelDrop}
                     onDragOver={handleDragOver}
@@ -1258,12 +1262,12 @@ export default function DashboardBuilderPage() {
                   >
                     <div className="space-y-1 text-center">
                       <FileSpreadsheet
-                        className={`mx-auto h-12 w-12 ${isDraggingCustomerIntel ? 'text-blue-500' : 'text-gray-400'}`}
+                        className={`mx-auto h-12 w-12 ${isDraggingCustomerIntel ? 'text-sky-400' : 'text-slate-500'}`}
                       />
-                      <div className="flex text-sm text-gray-600">
+                      <div className="flex text-sm text-slate-400">
                         <label
                           htmlFor="customerIntelFile"
-                          className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+                          className="builder-upload-link focus-within:outline-none focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 focus-within:ring-offset-slate-900"
                         >
                           <span>Upload a file</span>
                           <input
@@ -1277,15 +1281,15 @@ export default function DashboardBuilderPage() {
                         </label>
                         <p className="pl-1">or drag and drop</p>
                       </div>
-                      <p className="text-xs text-gray-500">CSV, XLSX, or XLS up to 50MB</p>
+                      <p className="text-xs text-slate-500">CSV, XLSX, or XLS up to 50MB</p>
                       {isDraggingCustomerIntel && (
-                        <p className="text-sm text-blue-600 mt-2 font-medium">Drop file here!</p>
+                        <p className="text-sm text-sky-400 mt-2 font-medium">Drop file here!</p>
                       )}
                       {customerIntelFile && !isDraggingCustomerIntel && (
-                        <p className="text-sm text-green-600 mt-2">
+                        <p className="text-sm text-emerald-400 mt-2">
                           {customerIntelFileData ? '✓' : '⏳'} {customerIntelFile.name} (
                           {(customerIntelFile.size / 1024 / 1024).toFixed(2)} MB)
-                          {customerIntelFileData && <span className="text-green-700 ml-1">(Ready)</span>}
+                          {customerIntelFileData && <span className="text-emerald-300 ml-1">(Ready)</span>}
                         </p>
                       )}
                     </div>
@@ -1295,7 +1299,7 @@ export default function DashboardBuilderPage() {
                     type="button"
                     onClick={() => handleProcessIntelligenceForTarget('customer')}
                     disabled={!customerIntelFileData || intelProcessing !== null}
-                    className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
+                    className="builder-btn-primary"
                   >
                     {intelProcessing === 'customer' ? (
                       <>
@@ -1313,19 +1317,19 @@ export default function DashboardBuilderPage() {
               )}
 
               {intelMode.distributor && (
-                <div className="space-y-4 rounded-lg border border-gray-100 bg-gray-50/50 p-4">
+                <div className="builder-panel-nested space-y-4">
                   <div className="flex items-center gap-2">
-                    <Building2 className="h-5 w-5 text-gray-600" />
-                    <h4 className="text-sm font-semibold text-black">Distributor intelligence workbook</h4>
+                    <Building2 className="h-5 w-5 text-violet-400/80" />
+                    <h4 className="text-sm font-semibold text-slate-100">Distributor intelligence workbook</h4>
                   </div>
-                  <label className="block text-sm font-medium text-black mb-2">
+                  <label className="block text-sm font-medium text-slate-200 mb-2">
                     Distributor workbook <span className="text-red-500">*</span>
                   </label>
                   <div
                     className={`mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-md transition-colors ${
                       isDraggingDistributorIntel
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-300 hover:border-gray-400'
+                        ? 'builder-upload-zone-active'
+                        : 'builder-upload-zone'
                     }`}
                     onDrop={handleDistributorIntelDrop}
                     onDragOver={handleDragOver}
@@ -1334,12 +1338,12 @@ export default function DashboardBuilderPage() {
                   >
                     <div className="space-y-1 text-center">
                       <FileSpreadsheet
-                        className={`mx-auto h-12 w-12 ${isDraggingDistributorIntel ? 'text-blue-500' : 'text-gray-400'}`}
+                        className={`mx-auto h-12 w-12 ${isDraggingDistributorIntel ? 'text-sky-400' : 'text-slate-500'}`}
                       />
-                      <div className="flex text-sm text-gray-600">
+                      <div className="flex text-sm text-slate-400">
                         <label
                           htmlFor="distributorIntelFile"
-                          className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+                          className="builder-upload-link focus-within:outline-none focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 focus-within:ring-offset-slate-900"
                         >
                           <span>Upload a file</span>
                           <input
@@ -1353,15 +1357,15 @@ export default function DashboardBuilderPage() {
                         </label>
                         <p className="pl-1">or drag and drop</p>
                       </div>
-                      <p className="text-xs text-gray-500">CSV, XLSX, or XLS up to 50MB</p>
+                      <p className="text-xs text-slate-500">CSV, XLSX, or XLS up to 50MB</p>
                       {isDraggingDistributorIntel && (
-                        <p className="text-sm text-blue-600 mt-2 font-medium">Drop file here!</p>
+                        <p className="text-sm text-sky-400 mt-2 font-medium">Drop file here!</p>
                       )}
                       {distributorIntelFile && !isDraggingDistributorIntel && (
-                        <p className="text-sm text-green-600 mt-2">
+                        <p className="text-sm text-emerald-400 mt-2">
                           {distributorIntelFileData ? '✓' : '⏳'} {distributorIntelFile.name} (
                           {(distributorIntelFile.size / 1024 / 1024).toFixed(2)} MB)
-                          {distributorIntelFileData && <span className="text-green-700 ml-1">(Ready)</span>}
+                          {distributorIntelFileData && <span className="text-emerald-300 ml-1">(Ready)</span>}
                         </p>
                       )}
                     </div>
@@ -1371,7 +1375,7 @@ export default function DashboardBuilderPage() {
                     type="button"
                     onClick={() => handleProcessIntelligenceForTarget('distributor')}
                     disabled={!distributorIntelFileData || intelProcessing !== null}
-                    className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
+                    className="builder-btn-primary"
                   >
                     {intelProcessing === 'distributor' ? (
                       <>
@@ -1392,25 +1396,25 @@ export default function DashboardBuilderPage() {
           )}
 
           {activeTab === 'pricing' && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
+          <div className="builder-card p-8">
             <div className="mb-6">
-              <h2 className="text-2xl font-bold text-black mb-2">3. Pricing Analysis</h2>
-              <p className="text-sm text-gray-600">Upload pricing analysis CSV/Excel file to display average selling price trends and analysis</p>
+              <h2 className="text-2xl font-bold text-white mb-2">3. Pricing Analysis</h2>
+              <p className="text-sm text-slate-400">Upload pricing analysis CSV/Excel file to display average selling price trends and analysis</p>
             </div>
 
             <div className="space-y-6">
               {/* Pricing Analysis File Upload */}
               <div>
-                <label className="block text-sm font-medium text-black mb-2">
+                <label className="block text-sm font-medium text-slate-200 mb-2">
                   Pricing Analysis File <span className="text-red-500">*</span>
                 </label>
-                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-gray-400 transition-colors">
+                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 builder-upload-zone">
                   <div className="space-y-1 text-center">
-                    <DollarSign className="mx-auto h-12 w-12 text-gray-400" />
-                    <div className="flex text-sm text-gray-600">
+                    <DollarSign className="mx-auto h-12 w-12 text-slate-500" />
+                    <div className="flex text-sm text-slate-400">
                       <label
                         htmlFor="pricingFile"
-                        className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+                        className="builder-upload-link focus-within:outline-none focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 focus-within:ring-offset-slate-900"
                       >
                         <span>Upload a file</span>
                         <input
@@ -1430,16 +1434,16 @@ export default function DashboardBuilderPage() {
                       </label>
                       <p className="pl-1">or drag and drop</p>
                     </div>
-                    <p className="text-xs text-gray-500">CSV, XLSX, or XLS up to 50MB</p>
+                    <p className="text-xs text-slate-500">CSV, XLSX, or XLS up to 50MB</p>
                     {pricingFile && (
-                      <p className="text-sm text-green-600 mt-2">
+                      <p className="text-sm text-emerald-400 mt-2">
                         ✓ {pricingFile.name} ({(pricingFile.size / 1024 / 1024).toFixed(2)} MB)
                       </p>
                     )}
                   </div>
                 </div>
-                <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                  <p className="text-xs text-blue-800">
+                <div className="builder-callout-info mt-2">
+                  <p>
                     <strong>Expected Format:</strong> The file should include columns: Region, Segment, Sub-segment, and year columns (e.g., 2020, 2021, 2022...) with pricing values. Similar structure to market value/volume data.
                   </p>
                 </div>
@@ -1447,33 +1451,15 @@ export default function DashboardBuilderPage() {
 
               {/* Status Message */}
               {pricingStatusMessage && (
-                <div
-                  className={`p-4 rounded-md flex items-start gap-3 ${
-                    pricingStatus === 'success'
-                      ? 'bg-green-50 border border-green-200'
-                      : pricingStatus === 'error'
-                      ? 'bg-red-50 border border-red-200'
-                      : 'bg-yellow-50 border border-yellow-200'
-                  }`}
-                >
+                <div className={`p-4 rounded-xl flex items-start gap-3 ${statusBlockClass(pricingStatus)}`}>
                   {pricingStatus === 'success' ? (
-                    <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+                    <CheckCircle2 className="h-5 w-5 text-emerald-400 flex-shrink-0 mt-0.5" />
                   ) : pricingStatus === 'error' ? (
-                    <XCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                    <XCircle className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
                   ) : (
-                    <Loader2 className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5 animate-spin" />
+                    <Loader2 className="h-5 w-5 text-sky-400 flex-shrink-0 mt-0.5 animate-spin" />
                   )}
-                  <p
-                    className={`text-sm ${
-                      pricingStatus === 'success'
-                        ? 'text-green-800'
-                        : pricingStatus === 'error'
-                        ? 'text-red-800'
-                        : 'text-yellow-800'
-                    }`}
-                  >
-                    {pricingStatusMessage}
-                  </p>
+                  <p className="text-sm">{pricingStatusMessage}</p>
                 </div>
               )}
 
@@ -1481,7 +1467,7 @@ export default function DashboardBuilderPage() {
               <button
                 onClick={handleProcessPricingAnalysis}
                 disabled={!pricingFile || isProcessingPricing}
-                className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
+                className="builder-btn-primary"
               >
                 {isProcessingPricing ? (
                   <>
@@ -1504,21 +1490,22 @@ export default function DashboardBuilderPage() {
         {(marketStatus === 'success' || hadIntelligenceUploadSuccess || pricingStatus === 'success') && (
           <div className="mt-6 space-y-4">
             {/* View Dashboard */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-              <div className="flex items-center justify-between">
+            <div className="builder-callout-ready">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h3 className="text-sm font-semibold text-blue-900 mb-1">Ready to View Dashboard!</h3>
-                  <p className="text-sm text-blue-800">
+                  <h3 className="text-sm font-semibold text-sky-300 mb-1">Ready to View Dashboard</h3>
+                  <p className="text-sm text-slate-400">
                     {[
                       marketStatus === 'success' && 'Market',
                       hadIntelligenceUploadSuccess && 'Intelligence',
                       pricingStatus === 'success' && 'Pricing'
-                    ].filter(Boolean).join(', ')} data processed. Click to view dashboard.
+                    ].filter(Boolean).join(', ')} data processed. Open your workspace when you are ready.
                   </p>
                 </div>
                 <button
+                  type="button"
                   onClick={handleViewDashboard}
-                  className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
+                  className="builder-btn-primary w-auto shrink-0 px-6"
                 >
                   <Eye className="h-5 w-5" />
                   View Dashboard
@@ -1528,43 +1515,44 @@ export default function DashboardBuilderPage() {
             </div>
 
             {/* Generate Shareable Link */}
-            <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+            <div className="builder-callout-share">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
-                  <h3 className="text-sm font-semibold text-green-900 mb-1 flex items-center gap-2">
-                    <svg className="h-4 w-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <h3 className="text-sm font-semibold text-emerald-300 mb-1 flex items-center gap-2">
+                    <svg className="h-4 w-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                     </svg>
                     Generate Shareable Link
                   </h3>
-                  <p className="text-sm text-green-800 mb-3">
+                  <p className="text-sm text-slate-400 mb-3">
                     Create a permanent link to share this dashboard with your client. The link works on any browser and never expires.
                   </p>
 
                   {shareLinkError && (
-                    <div className="flex items-start gap-2 p-2.5 mb-3 bg-red-50 border border-red-200 rounded-md">
-                      <svg className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="flex items-start gap-2 p-2.5 mb-3 builder-status-error rounded-lg">
+                      <svg className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      <p className="text-xs text-red-700">{shareLinkError}</p>
+                      <p className="text-xs">{shareLinkError}</p>
                     </div>
                   )}
 
                   {shareUrl ? (
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <input
                         type="text"
                         readOnly
                         value={shareUrl}
-                        className="flex-1 px-3 py-2 text-sm bg-white border border-green-300 rounded-md font-mono text-gray-700 select-all"
+                        className="builder-input flex-1 min-w-[200px] font-mono text-sm select-all"
                         onClick={e => (e.target as HTMLInputElement).select()}
                       />
                       <button
+                        type="button"
                         onClick={handleCopyLink}
-                        className={`flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                        className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                           linkCopied
-                            ? 'bg-green-600 text-white'
-                            : 'bg-white border border-green-400 text-green-700 hover:bg-green-100'
+                            ? 'bg-emerald-600 text-white'
+                            : 'builder-btn-ghost text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/10'
                         }`}
                       >
                         {linkCopied ? (
@@ -1584,8 +1572,9 @@ export default function DashboardBuilderPage() {
                         )}
                       </button>
                       <button
+                        type="button"
                         onClick={() => { setShareUrl(null); setLinkCopied(false); setShareLinkError(null) }}
-                        className="px-3 py-2 text-sm text-green-700 hover:text-green-900 border border-green-300 rounded-md hover:bg-green-100 transition-colors"
+                        className="builder-btn-ghost text-emerald-300 border-emerald-500/30"
                         title="Generate a new link"
                       >
                         New Link
@@ -1593,9 +1582,10 @@ export default function DashboardBuilderPage() {
                     </div>
                   ) : (
                     <button
+                      type="button"
                       onClick={handleGenerateLink}
                       disabled={isGeneratingLink}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium text-sm"
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-45 disabled:cursor-not-allowed transition-colors font-medium text-sm"
                     >
                       {isGeneratingLink ? (
                         <>
@@ -1617,6 +1607,7 @@ export default function DashboardBuilderPage() {
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   )
