@@ -7,6 +7,7 @@ import Image from 'next/image'
 import { useDashboardStore } from '@/lib/store'
 import type { ComparisonData } from '@/lib/types'
 import { IntelligenceDataInput, type IntelligenceMode } from '@/components/dashboard-builder/IntelligenceDataInput'
+import { postDashboardSave } from '@/lib/share-upload'
 
 function modeToStoreType(m: IntelligenceMode): 'customer' | 'distributor' | 'both' | null {
   if (m.customer && m.distributor) return 'both'
@@ -364,11 +365,7 @@ export default function DashboardBuilderPage() {
         return
       }
 
-      const res = await fetch('/api/dashboards/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: serialised,
-      })
+      const res = await postDashboardSave(payload)
 
       let body: any
       try { body = await res.json() } catch { body = {} }

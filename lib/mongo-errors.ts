@@ -47,11 +47,12 @@ export function getPublicMongoErrorMessage(err: unknown): {
   if (
     msg.includes('BSONObjectTooLarge') ||
     msg.includes('document is larger than') ||
-    msg.includes('maximum allowed size')
+    msg.includes('maximum allowed size') ||
+    msg.includes('DASHBOARD_TOO_LARGE')
   ) {
     return {
       message:
-        'Dashboard data is too large to save. Try fewer geographies or segments, then generate the link again.',
+        'Dashboard data is too large to save (~3,500+ rows). Reduce geographies or segments in Excel, then upload and share again.',
       status: 413,
     }
   }

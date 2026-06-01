@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getDashboard, incrementReadCount, isValidDashboardId } from '@/lib/dashboard-mongo'
+import { hydrateDashboardDocument } from '@/lib/dashboard-snapshot-persist'
 import { cacheGet, cacheSet } from '@/lib/slave-cache'
 
 export const dynamic = 'force-dynamic'
@@ -89,7 +90,7 @@ export async function GET(
       incrementReadCount(id)
     }
 
-    return NextResponse.json(doc)
+    return NextResponse.json(hydrateDashboardDocument(doc))
 
   } catch (err) {
     console.error('[dashboards/[id]] Error:', err)

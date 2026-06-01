@@ -6,6 +6,13 @@ import { getPublicAppOrigin } from '@/lib/app-origin'
 import { parseIntelligenceSheet } from '@/lib/intelligence-sheet-types'
 import { getPublicMongoErrorMessage } from '@/lib/mongo-errors'
 import { getMongoUri } from '@/lib/mongo-config'
+import {
+  decodeSaveRequestBody,
+  persistMarketData,
+  persistJsonField,
+  hydrateDashboardDocument,
+} from '@/lib/dashboard-snapshot-persist'
+import type { ComparisonData } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -25,7 +32,8 @@ export async function POST(request: NextRequest) {
   let body: Record<string, unknown>
 
   try {
-    body = await request.json()
+    const raw = await request.json()
+    body = decodeSaveRequestBody(raw as Record<string, unknown>)
   } catch {
     return NextResponse.json({ error: 'Request body is not valid JSON.' }, { status: 400 })
   }
@@ -50,11 +58,15 @@ export async function POST(request: NextRequest) {
       partitionKey = await assignPartition()
     }
 
+    const marketPersist = persistMarketData(data as ComparisonData | null | undefined)
+    const pricingPersist = persistJsonField(pricingAnalysisData)
+
     const payload = {
       name: typeof body.name === 'string' ? body.name : 'Untitled Dashboard',
       currency: body.currency === 'INR' ? ('INR' as const) : ('USD' as const),
       partitionKey,
-      data: (body.data as any) ?? null,
+      data: marketPersist.data,
+      dataCompressed: marketPersist.dataCompressed,
       intelligenceType: (body.intelligenceType as any) ?? null,
       rawIntelligenceData: parseIntelligenceSheet(body.rawIntelligenceData),
       proposition2Data: parseIntelligenceSheet(body.proposition2Data),
@@ -62,7 +74,8 @@ export async function POST(request: NextRequest) {
       distributorRawIntelligenceData: parseIntelligenceSheet(body.distributorRawIntelligenceData),
       distributorProposition2Data: parseIntelligenceSheet(body.distributorProposition2Data),
       distributorProposition3Data: parseIntelligenceSheet(body.distributorProposition3Data),
-      pricingAnalysisData: body.pricingAnalysisData ?? null,
+      pricingAnalysisData: pricingPersist.inline,
+      pricingAnalysisCompressed: pricingPersist.compressed,
       showDemoNote: body.showDemoNote === true,
     }
 
@@ -70,13 +83,14 @@ export async function POST(request: NextRequest) {
 
     try {
       cacheInvalidate(id, partitionKey)
-      cacheSet(id, partitionKey, {
+      const cacheDoc = hydrateDashboardDocument({
         _id: id,
         ...payload,
         readCount: 0,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })
+      cacheSet(id, partitionKey, cacheDoc)
     } catch (cacheErr) {
       console.warn('[dashboards/save] Cache warm failed (non-fatal):', cacheErr)
     }

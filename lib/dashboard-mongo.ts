@@ -29,8 +29,10 @@ export interface DashboardDocument {
   partitionKey: number
   /** Total number of times this shared link has been opened. */
   readCount: number
-  /** Core market data (value / volume) */
+  /** Core market data (value / volume) — inline when small */
   data: ComparisonData | null
+  /** gzip+base64 market data when payload exceeds inline limit */
+  dataCompressed?: string | null
   intelligenceType: 'customer' | 'distributor' | 'both' | null
   rawIntelligenceData: IntelligenceSheetData | null
   proposition2Data: IntelligenceSheetData | null
@@ -39,6 +41,7 @@ export interface DashboardDocument {
   distributorProposition2Data: IntelligenceSheetData | null
   distributorProposition3Data: IntelligenceSheetData | null
   pricingAnalysisData: unknown
+  pricingAnalysisCompressed?: string | null
   showDemoNote: boolean
 }
 

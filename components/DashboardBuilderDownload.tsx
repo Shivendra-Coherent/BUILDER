@@ -10,6 +10,7 @@
 import { useState } from 'react'
 import { useDashboardStore } from '@/lib/store'
 import { Link2, Copy, Check, Loader2, RefreshCw, X } from 'lucide-react'
+import { postDashboardSave } from '@/lib/share-upload'
 
 export function DashboardBuilderDownload() {
   const {
@@ -80,11 +81,7 @@ export function DashboardBuilderDownload() {
         return
       }
 
-      const res = await fetch('/api/dashboards/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: serialised,
-      })
+      const res = await postDashboardSave(payload)
 
       let body: any
       try {
