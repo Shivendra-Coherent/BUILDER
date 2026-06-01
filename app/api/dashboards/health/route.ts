@@ -14,18 +14,36 @@
 
 import { NextResponse } from 'next/server'
 import { getSystemHealth } from '@/lib/master-registry'
+import { pingMongo } from '@/lib/mongodb'
+import { getMongoUri, getMongoDatabaseName } from '@/lib/mongo-config'
+import { getPublicMongoErrorMessage } from '@/lib/mongo-errors'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
+  const mongoConfigured = !!getMongoUri()
+  const ping = mongoConfigured ? await pingMongo() : { ok: false, error: 'MONGODB_URI not set' }
+
+  if (!ping.ok) {
+    const { message } = getPublicMongoErrorMessage(new Error(ping.error || 'MongoDB ping failed'))
+    return NextResponse.json(
+      {
+        status: 'unhealthy',
+        mongo: { configured: mongoConfigured, connected: false, database: getMongoDatabaseName(), error: message },
+      },
+      { status: 503 }
+    )
+  }
+
   try {
     const health = await getSystemHealth()
-    return NextResponse.json(health)
+    return NextResponse.json({
+      ...health,
+      mongo: { configured: true, connected: true, database: getMongoDatabaseName() },
+    })
   } catch (err) {
     console.error('[health] Failed to collect system health:', err)
-    return NextResponse.json(
-      { error: 'Could not collect health data.' },
-      { status: 500 }
-    )
+    const { message } = getPublicMongoErrorMessage(err)
+    return NextResponse.json({ error: message, mongo: { connected: true } }, { status: 500 })
   }
 }

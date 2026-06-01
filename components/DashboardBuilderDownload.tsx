@@ -26,6 +26,7 @@ export function DashboardBuilderDownload() {
     pricingAnalysisData,
     showDemoNote,
     dashboardId,
+    setDashboardId,
     fromDashboardBuilder,
     dashboardBuilderFiles,
   } = useDashboardStore()
@@ -101,6 +102,9 @@ export function DashboardBuilderDownload() {
       }
 
       setShareUrl(body.shareUrl)
+      if (body.id && typeof body.id === 'string') {
+        setDashboardId(body.id)
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error – please try again.'
       setError(msg)

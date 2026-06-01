@@ -378,6 +378,9 @@ export default function DashboardBuilderPage() {
       }
 
       setShareUrl(body.shareUrl)
+      if (body.id && typeof body.id === 'string') {
+        setDashboardId(body.id)
+      }
     } catch (err) {
       setShareLinkError(err instanceof Error ? err.message : 'Could not generate link – please try again.')
     } finally {

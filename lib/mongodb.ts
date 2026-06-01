@@ -1,27 +1,22 @@
 /**
- * MongoDB connection singleton (lazy).
- *
- * Does not connect or throw at import time so `next build` succeeds on Vercel
- * before MONGODB_URI is read at runtime. Connection is created on first use.
+ * MongoDB connection singleton (lazy, serverless-friendly).
  */
 
-import { MongoClient, ServerApiVersion } from 'mongodb'
+import { MongoClient } from 'mongodb'
+import { getMongoUri } from './mongo-config'
 
 declare global {
   // eslint-disable-next-line no-var
   var _mongoClientPromise: Promise<MongoClient> | undefined
 }
 
+/** Tuned for Vercel/serverless: no min pool, short timeouts, no strict Server API. */
 const options = {
-  serverApi: {
-    version: ServerApiVersion.v1,
-    strict: true,
-    deprecationErrors: true,
-  },
   maxPoolSize: 10,
-  minPoolSize: 1,
-  connectTimeoutMS: 10_000,
+  minPoolSize: 0,
+  connectTimeoutMS: 15_000,
   socketTimeoutMS: 45_000,
+  serverSelectionTimeoutMS: 15_000,
 }
 
 function missingUriError(): Error {
@@ -32,25 +27,34 @@ function missingUriError(): Error {
 }
 
 export function getMongoClient(): Promise<MongoClient> {
-  const uri = process.env.MONGODB_URI
+  const uri = getMongoUri()
   if (!uri) {
     return Promise.reject(missingUriError())
   }
 
-  if (process.env.NODE_ENV === 'development') {
-    if (!global._mongoClientPromise) {
-      global._mongoClientPromise = new MongoClient(uri, options).connect()
-    }
-    return global._mongoClientPromise
+  if (!global._mongoClientPromise) {
+    const client = new MongoClient(uri, options)
+    global._mongoClientPromise = client.connect().catch((err) => {
+      global._mongoClientPromise = undefined
+      throw err
+    })
   }
 
-  if (!global._mongoClientPromise) {
-    global._mongoClientPromise = new MongoClient(uri, options).connect()
-  }
   return global._mongoClientPromise
 }
 
-/** @deprecated Prefer getMongoClient(); kept for existing imports. */
+/** Quick connectivity check for health/debug endpoints. */
+export async function pingMongo(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const client = await getMongoClient()
+    await client.db('admin').command({ ping: 1 })
+    return { ok: true }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { ok: false, error: message }
+  }
+}
+
 const lazyClientPromise: Promise<MongoClient> = {
   then(onFulfilled, onRejected) {
     return getMongoClient().then(onFulfilled, onRejected)

@@ -10,6 +10,7 @@
  */
 
 import { getMongoClient } from './mongodb'
+import { getMongoDatabaseName, getMongoCollectionName } from './mongo-config'
 import type { ComparisonData } from './types'
 import type { IntelligenceSheetData } from './intelligence-sheet-types'
 
@@ -58,7 +59,9 @@ export function isValidDashboardId(id: unknown): id is string {
 
 async function getCollection() {
   const client = await getMongoClient()
-  return client.db('DBbuilder').collection<DashboardDocument>('Builder')
+  return client
+    .db(getMongoDatabaseName())
+    .collection<DashboardDocument>(getMongoCollectionName())
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────

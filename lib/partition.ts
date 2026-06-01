@@ -12,7 +12,12 @@
  */
 
 import { getMongoClient } from './mongodb'
+import { getMongoDatabaseName, getMongoCollectionName } from './mongo-config'
 import { PARTITION_COUNT } from './slave-cache'
+
+function getBuilderCollection(client: Awaited<ReturnType<typeof getMongoClient>>) {
+  return client.db(getMongoDatabaseName()).collection(getMongoCollectionName())
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -33,7 +38,7 @@ export interface PartitionLoad {
 export async function assignPartition(): Promise<number> {
   try {
     const client = await getMongoClient()
-    const col = client.db('DBbuilder').collection('Builder')
+    const col = getBuilderCollection(client)
 
     // Aggregate count per partitionKey in a single round-trip
     const counts: { _id: number; count: number }[] = await col
@@ -72,7 +77,7 @@ export async function assignPartition(): Promise<number> {
 export async function getPartitionLoads(): Promise<PartitionLoad[]> {
   try {
     const client = await getMongoClient()
-    const col = client.db('DBbuilder').collection('Builder')
+    const col = getBuilderCollection(client)
 
     const counts: { _id: number; count: number }[] = await col
       .aggregate([
